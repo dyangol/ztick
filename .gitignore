@@ -1,55 +1,44 @@
-# Prerequisites
-*.d
+# AI / agent tooling
+.agents/
+.codex/
+.ai/
+.aider/
+.claude/
+.cursor/
 
-# Object files
+# VS Code
+.vscode/
+*.code-workspace
+
+# Build outputs and dependency artifacts
+build/
+bin/
+out/
+target/
+
+# Compiled / object files
 *.o
-*.ko
 *.obj
-*.elf
-
-# Linker output
-*.ilk
-*.map
-*.exp
-
-# Precompiled Headers
-*.gch
-*.pch
-
-# Libraries
-*.lib
+*.lo
 *.a
 *.la
-*.lo
-
-# Shared objects (inc. Windows DLLs)
-*.dll
 *.so
-*.so.*
 *.dylib
-
-# Executables
+*.dll
 *.exe
 *.out
-*.app
-*.i*86
-*.x86_64
+*.class
+*.pyc
+
+# Debug / map / intermediate files
+*.d
+*.map
+*.lst
+*.sym
+*.rel
+*.ihx
+*.lk
+*.noi
+*.elf
+*.bin
 *.hex
-
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
-
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
-
-# debug information files
-*.dwo
