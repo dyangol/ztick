@@ -1,0 +1,7 @@
+[
+  {"IORQ_L": 1, "RD_L": 1, "WR_L": 1, "FT_RXF_L": 1, "FT_TXE": 0, "port": 56},
+  {"IORQ_L": 0, "RD_L": 1, "WR_L": 0, "FT_RXF_L": 1, "FT_TXE": 1, "port": 56},
+  {"IORQ_L": 1, "RD_L": 1, "WR_L": 1, "FT_RXF_L": 1, "FT_TXE": 0, "port": 56},
+  {"IORQ_L": 0, "RD_L": 0, "WR_L": 1, "FT_RXF_L": 0, "FT_TXE": 0, "port": 56},
+  {"IORQ_L": 1, "RD_L": 1, "WR_L": 1, "FT_RXF_L": 1, "FT_TXE": 0, "port": 56}
+]
