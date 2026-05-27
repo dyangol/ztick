@@ -96,9 +96,9 @@ Aquesta nova targeta està basada en la memòria flash multi propòsit SST39SF01
 # Protocol `zlink`
 El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O amb Z80. No incorpora cap interfície de maquinari que permeti detectar l'arribada de dades noves i activar interrupcions especialitzades. Per resoldre-ho, fem servir un protocol de capa d'enllaç anomenat `zlink`, situat sota `zbus`, per resoldre RX sense senyals de tipus `DATA_READY`.
 
-Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink`fa servir número de seqüència (`SEQ`). També permet multiplexar diversos dispositius tipus `TTY`, en concret del `TTY0` al `TTY15`.
+Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink` fa servir número de seqüència (`SEQ`). També permet multiplexar diversos canals tipus `TTY`, en concret del `TTY0` al `TTY15`.
 
-## Format de la trama `zlink`**
+## Format de la trama `zlink`
 El _header_ de `zlink` està format per aquest _bytes_:
 
 - `B0 = SOF5|TYPE3`
@@ -118,30 +118,15 @@ El _header_ de `zlink` està format per aquest _bytes_:
 - `PAYLOAD = LEN bytes`
 - `CRC8` (1 byte) sobre `B0..B(3+LEN)`, polinomi `0x07`, init `0x00`, xorout `0x00`
 
-La longitud total de la trama es troba entre 5 i 69 _bytes_.
+La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada cicle de recepció enviant una trama `POLL` sense payload. El _host_ respon immediatament amb `EMPTY` si no hi ha dades pendents, o amb `DATA` si n'hi ha. Quan el MSX rep una trama `DATA` vàlida, entrega el payload al `TTY` indicat i retorna `ACK` amb el mateix `SEQ`. Si arriba una `DATA` amb error de format (p. ex. `LEN` invàlid), el MSX respon `NACK` del `SEQ` rebut i no entrega payload. En el cas que arribi una `DATA` duplicada (`SEQ` idèntic a l'últim ja acceptat per aquell `TTY`), el MSX no la torna a processar i respon `ACK` per evitar una re execució. `zlink` només transporta trames i multiplexa `TTY`; l'assignació de cada `TTY` a tasques/processos la fa `zbus`.
 
-**Regles de protocol**
-- `POLL/EMPTY/ACK/NACK`: `LEN=0`
-- `DATA`: `LEN>0`
-- `ACK/NACK` confirmen/rebutgen el `SEQ` de `DATA`
-- `DATA` duplicat (`SEQ` igual a l’últim processat) no es reentrega; es respon `ACK`
-- cada `POLL` del MSX espera una resposta immediata del host: `DATA` o `EMPTY`
-- la mida màxima de `PAYLOAD` és `64` bytes per trama
+`zlink` és deliberadament asimètric. El costat MSX no pot observar directament l'estat de disponibilitat del bridge (`RXF#`/`TXE#`) ni disposa d'un senyal de tipus `DATA_READY`, de manera que la recepció `host -> MSX` es basa en `POLL` periòdic del MSX (`POLL -> DATA|EMPTY`). Tot i que el host sí que pot tenir aquests senyals, aquesta informació no és visible pel MSX i, per tant, el protocol prioritza simplicitat i robustesa al costat MSX en lloc de forçar una simetria completa.
 
-**Comportament actual al codi**
-- `zlink_poll_once()` envia `POLL` amb `tty=0` i tracta `TTY` com a camp de multiplexació de la trama rebuda
-- l'assignació de `tty` a processos la fa `zbus` (no `zlink`); per això el `tty` d'eco pot variar segons el runtime
-- `main_shell` (task `xsh`) i les tasques `b` i `c` processen dades al seu `tty`; els seus punts d'entrada són `main_b()` i `main_c()`
-- `tty=15` queda reservat per control de kernel (`GET_STATS`)
-
-**Model de rols (asimetria deliberada)**
-- `zlink` és `role-based` (asimètric) en aquest projecte: el costat MSX no disposa de senyal de tipus `DATA_READY` ni d'un registre d'estat del bridge cap al Z80.
-- En el bridge actual, el bus de dades visible pel MSX només està connectat al bus de dades del `FT245` a través del `74HC245`; per software, el MSX no pot consultar `RXF#`/`TXE#`.
-- Per aquest motiu, el camí `host -> MSX` es resol per `POLL` del MSX (`POLL -> DATA|EMPTY`).
-- Encara que el costat host (p. ex. Linux amb FT245) pugui tenir senyals de disponibilitat (`RXF#`/`TXE#`), això no elimina la necessitat de `POLL` mentre aquest estat no sigui observable pel MSX.
-- Conseqüència pràctica: no es força simetria completa del protocol; es prioritza simplicitat i robustesa al costat MSX.
+La `tty=15` està reservada pel _kernel_. Les consultes via `tty=15` són el canal de control del _kernel_ (control-plane). A diferència dels `TTY` d'usuari, aquestes trames no s'entreguen a cap una tasca d'aplicació: el _kernel_ les interpreta com a comandes de diagnòstic/inspecció i retorna una resposta estructurada (`RSP_*`) pel mateix `tty=15`. Això permet monitoratge i automatització (stats, estat de tasks, stack watermark) sense barrejar aquest tràfic amb la shell o les dades normals dels processos.
 
 **Consulta de stats via `tty=15`**
+Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar pèrdues, errors i saturació.
+
 - Request host->MSX (`DATA`, `tty=15`): payload `01` (`GET_STATS`)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `81` (`RSP_STATS`)
@@ -165,6 +150,8 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_.
     - en error: `len`, `payload_hex`
 
 **Consulta de task info via `tty=15`**
+Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer estat, `tty`, `SP` i nom.
+
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `02` (`GET_TASK_INFO`, task actual), o
   - payload `02 <task_id>` (`GET_TASK_INFO` d'un task concret)
@@ -187,6 +174,8 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_.
     - en error: `len`, `payload_hex`
 
 **Consulta de llista de tasks via `tty=15`**
+Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i nom.
+
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `03` (`GET_TASK_LIST`)
 - Response MSX->host (`DATA`, `tty=15`): payload
@@ -209,6 +198,8 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_.
     - en error: `len`, `payload_hex`
 
 **Watermark de stack via `tty=15`**
+Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `stack overflow`.
+
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `07` (`GET_STACK_WM`, task actual), o
   - payload `07 <task_id>` (`GET_STACK_WM` d'un task concret)
@@ -224,23 +215,33 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_.
   - `zlink_dev::get_stack_wm` / `zlink::get_stack_wm`
   - `zlink_dev::get_stack_wm <task_id>` / `zlink::get_stack_wm <task_id>`
 
-**Exemples**
-- `POLL` tty0 seq`0x10`: `A0 00 00 10 CRC`
-- `EMPTY` tty0 seq`0x10`: `A1 00 00 10 CRC`
-- `DATA` tty2 len3 seq`0x2A` payload `11 22 33`: `A2 02 03 2A 11 22 33 CRC`
-- `ACK` tty2 seq`0x2A`: `A3 02 00 2A CRC`
+# IPC
+L'objectiu de l'IPC és oferir un mecanisme mínim, previsible i de baix cost per coordinar tasques i intercanviar dades dins del sistema, així com evitar esperes actives i mantenint el sistema reactiu sota càrrega.
 
-## IPC local mínim (Semaphore + Queue)
-L'IPC local es basa en un mòdul de nucli amb:
+El mòdul IPC es construeix amb dues primitives:
 
 - `ipc_semaphore_t`: sincronització bloquejant entre tasks (`wait/signal`).
-- `ipc_queue_t`: FIFO de mida fixa, implementada sobre dos semàfors (`items` i `slots`).
+  - Serveix per protegir recursos compartits o esperar esdeveniments.
+  - Si el recurs no està disponible, la task no gira en bucle: queda bloquejada fins que algú faci `signal`.
+- `ipc_queue_t`: FIFO de mida fixa per a missatgeria entre productor i consumidor.
+  - Internament usa dos semàfors:
+    - `items`: nombre d'elements disponibles per rebre.
+    - `slots`: espai lliure disponible per enviar.
+  - Això imposa control de flux: no es pot enviar si la cua és plena ni rebre si és buida.
 
-Característiques:
+Funcionament operatiu (model productor/consumidor):
 
-- no fa polling actiu quan no hi ha dades,
-- integra estats de task de bloqueig al scheduler (`wait_sem`, `wait_q_send`, `wait_q_recv`),
-- s'utilitza com a base mínima per missatgeria interna entre processos.
+1. `send`: el productor espera `slots`, escriu a la cua i incrementa `items`.
+2. `recv`: el consumidor espera `items`, llegeix de la cua i incrementa `slots`.
+3. Quan no es pot progressar (cua plena o buida), la task queda en espera del nucli i es reprèn quan toca.
+
+Integració amb el scheduler:
+
+- Els bloquejos d'IPC es reflecteixen a l'estat de task (`wait_sem`, `wait_q_send`, `wait_q_recv`).
+- Això permet que el planificador executi altres tasks preparades mentre una task espera IPC.
+- El resultat és menor latència global i millor aprofitament de CPU que amb polling.
+
+En resum, aquest IPC és la base de missatgeria interna del sistema: prou simple per ser robusta en Z80 i prou expressiva per construir canals entre tasks sense acoblament fort.
 
 
 # Compilació
