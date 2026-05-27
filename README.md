@@ -98,7 +98,6 @@ El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O
 
 Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink` fa servir número de seqüència (`SEQ`). També permet multiplexar diversos canals tipus `TTY`, en concret del `TTY0` al `TTY15`.
 
-## Format de la trama `zlink`
 El _header_ de `zlink` està format per aquest _bytes_:
 
 - `B0 = SOF5|TYPE3`
@@ -124,7 +123,9 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada 
 
 La `tty=15` està reservada pel _kernel_. Les consultes via `tty=15` són el canal de control del _kernel_ (control-plane). A diferència dels `TTY` d'usuari, aquestes trames no s'entreguen a cap una tasca d'aplicació: el _kernel_ les interpreta com a comandes de diagnòstic/inspecció i retorna una resposta estructurada (`RSP_*`) pel mateix `tty=15`. Això permet monitoratge i automatització (stats, estat de tasks, stack watermark) sense barrejar aquest tràfic amb la shell o les dades normals dels processos.
 
-**Consulta de stats via `tty=15`**
+Les següents seccions donen detalls dels missatges intercanviats per `zlink` a través de `tty=15`.
+
+## Estadístiques
 Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar pèrdues, errors i saturació.
 
 - Request host->MSX (`DATA`, `tty=15`): payload `01` (`GET_STATS`)
@@ -149,7 +150,7 @@ Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar p
     - `zlink_rx_frames_ok`, `zlink_rx_crc_err`, `zlink_rx_dup`, `zlink_rx_type_err`, `zlink_rx_len_err`
     - en error: `len`, `payload_hex`
 
-**Consulta de task info via `tty=15`**
+## Dades de tasca
 Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer estat, `tty`, `SP` i nom.
 
 - Request host->MSX (`DATA`, `tty=15`):
@@ -173,7 +174,7 @@ Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer est
     - `id`, `state`, `sp` (hexadecimal, p.ex. `"0x1234"`), `name_len`, `name`
     - en error: `len`, `payload_hex`
 
-**Consulta de llista de tasks via `tty=15`**
+## Llista de tasques
 Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i nom.
 
 - Request host->MSX (`DATA`, `tty=15`):
@@ -197,7 +198,8 @@ Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i no
     - `tasks`: llista d'objectes amb `id`, `tty`, `name_len`, `name`
     - en error: `len`, `payload_hex`
 
-**Watermark de stack via `tty=15`**
+## Watermark de stack
+
 Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `stack overflow`.
 
 - Request host->MSX (`DATA`, `tty=15`):
