@@ -25,7 +25,5 @@ typedef struct zlink_data_frame {
 void zlink_init(uint8_t io_port);
 uint8_t zlink_poll_once(zlink_data_frame_t *out);
 uint8_t zlink_send_data(uint8_t tty, const uint8_t *payload, uint8_t len);
-uint8_t zlink_send_ack(uint8_t seq, uint8_t tty);
-uint8_t zlink_send_nack(uint8_t seq, uint8_t tty);
 
 #endif

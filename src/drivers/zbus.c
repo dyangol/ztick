@@ -156,6 +156,13 @@ static void zbus_stats_snapshot_raw(zbus_stats_t *out)
     out->zlink_rx_len_err = zlink_stats.rx_len_err;
 }
 
+static void zbus_kernel_send_payload(const uint8_t *payload, uint8_t len)
+{
+    if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, len) == 0u) {
+        COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
+    }
+}
+
 static void zbus_kernel_send_stats_reply(uint8_t status)
 {
     uint8_t payload[ZBUS_KERNEL_CTRL_REPLY_STATS_LEN];
@@ -181,9 +188,7 @@ static void zbus_kernel_send_stats_reply(uint8_t status)
         }
     }
 
-    if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_STATS_LEN) == 0u) {
-        COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
-    }
+    zbus_kernel_send_payload(payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_STATS_LEN);
 }
 
 static void zbus_kernel_send_task_info_reply(uint8_t status, uint8_t task_id)
@@ -217,9 +222,7 @@ static void zbus_kernel_send_task_info_reply(uint8_t status, uint8_t task_id)
         }
     }
 
-    if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_TASKINFO_LEN) == 0u) {
-        COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
-    }
+    zbus_kernel_send_payload(payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_TASKINFO_LEN);
 }
 
 static void zbus_kernel_send_task_list_reply(uint8_t status)
@@ -268,9 +271,7 @@ static void zbus_kernel_send_task_list_reply(uint8_t status)
         payload[2] = count;
     }
 
-    if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, len) == 0u) {
-        COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
-    }
+    zbus_kernel_send_payload(payload, len);
 }
 
 static void zbus_kernel_send_stack_wm_reply(uint8_t status, uint8_t task_id)
@@ -299,9 +300,7 @@ static void zbus_kernel_send_stack_wm_reply(uint8_t status, uint8_t task_id)
         }
     }
 
-    if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_STACK_WM_LEN) == 0u) {
-        COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
-    }
+    zbus_kernel_send_payload(payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_STACK_WM_LEN);
 }
 
 static void zbus_kernel_handle_control(const zlink_data_frame_t *rx_frame)
@@ -374,19 +373,6 @@ static void zbus_rx_enqueue_payload(uint8_t tty_id, const zlink_data_frame_t *rx
     }
 }
 
-static uint8_t zbus_is_owner(uint8_t tty_id)
-{
-    if (zbus_is_valid_tty(tty_id) == 0u) {
-        return 0u;
-    }
-
-    if (g_zbus_tty_table[tty_id].state != ZBUS_TTY_ATTACHED) {
-        return 0u;
-    }
-
-    return (g_zbus_tty_table[tty_id].owner_task_id == g_current_task) ? 1u : 0u;
-}
-
 static uint8_t zbus_legacy_get_or_attach(void)
 {
     uint8_t task_id = g_current_task;
@@ -399,8 +385,7 @@ static uint8_t zbus_legacy_get_or_attach(void)
     tty_id = g_zbus_legacy_tty_by_task[task_id];
     if ((tty_id != (uint8_t)ZBUS_INVALID_TTY_ID)
         && (zbus_is_valid_tty(tty_id) != 0u)
-        && (g_zbus_tty_table[tty_id].state == ZBUS_TTY_ATTACHED)
-        && (g_zbus_tty_table[tty_id].owner_task_id == task_id)) {
+        && (zbus_tty_match_owner(tty_id, task_id) != 0u)) {
         return tty_id;
     }
 
@@ -510,7 +495,7 @@ uint8_t zbus_tty_detach(uint8_t tty_id)
 
     CPU_DI();
 
-    if (zbus_is_owner(tty_id) == 0u) {
+    if (zbus_tty_match_owner(tty_id, g_current_task) == 0u) {
         CPU_EI();
         return 0u;
     }
@@ -554,7 +539,7 @@ uint8_t zbus_tty_set_rx_polling(uint8_t tty_id, uint8_t enabled)
 
     CPU_DI();
 
-    if (zbus_is_owner(tty_id) == 0u) {
+    if (zbus_tty_match_owner(tty_id, g_current_task) == 0u) {
         CPU_EI();
         return 0u;
     }
@@ -580,7 +565,7 @@ uint8_t zbus_write_tty(uint8_t tty_id, const uint8_t *data, uint8_t len)
 
     CPU_DI();
 
-    if (zbus_is_owner(tty_id) == 0u) {
+    if (zbus_tty_match_owner(tty_id, g_current_task) == 0u) {
         CPU_EI();
         return 0u;
     }
@@ -619,7 +604,7 @@ uint8_t zbus_read_tty(uint8_t tty_id, uint8_t *out, uint8_t maxlen)
 
     CPU_DI();
 
-    if (zbus_is_owner(tty_id) == 0u) {
+    if (zbus_tty_match_owner(tty_id, g_current_task) == 0u) {
         CPU_EI();
         return 0u;
     }
@@ -648,7 +633,7 @@ uint8_t zbus_tty_tx_pending(uint8_t tty_id)
     }
 
     CPU_DI();
-    if (zbus_is_owner(tty_id) == 0u) {
+    if (zbus_tty_match_owner(tty_id, g_current_task) == 0u) {
         CPU_EI();
         return 0u;
     }
@@ -745,26 +730,11 @@ void zbus_tick(void)
         tty_id = rx_frame.tty;
         if (tty_id == (uint8_t)ZBUS_KERNEL_TTY_ID) {
             zbus_kernel_handle_control(&rx_frame);
-            rx_frames_remaining--;
-            continue;
+        } else if ((tty_id < ZBUS_MAX_TTY)
+                   && (zbus_tty_is_attached(tty_id) != 0u)
+                   && (g_zbus_tty_table[tty_id].rx_polling_enabled != 0u)) {
+            zbus_rx_enqueue_payload(tty_id, &rx_frame);
         }
-
-        if (tty_id >= ZBUS_MAX_TTY) {
-            rx_frames_remaining--;
-            continue;
-        }
-
-        if (zbus_tty_is_attached(tty_id) == 0u) {
-            rx_frames_remaining--;
-            continue;
-        }
-
-        if (g_zbus_tty_table[tty_id].rx_polling_enabled == 0u) {
-            rx_frames_remaining--;
-            continue;
-        }
-
-        zbus_rx_enqueue_payload(tty_id, &rx_frame);
 
         rx_frames_remaining--;
     }

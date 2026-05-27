@@ -303,7 +303,7 @@ uint8_t xsh_parse_u8(const uint8_t *text, uint8_t *out_value)
     return 1u;
 }
 
-uint8_t xsh_token_equals(const uint8_t *token, const uint8_t *lit)
+static uint8_t xsh_token_equals(const uint8_t *token, const uint8_t *lit)
 {
     uint8_t i = 0u;
 

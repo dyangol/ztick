@@ -17,11 +17,16 @@ static const task_spec_t g_task_specs[] = {
     {g_task_name_c, main_c, TASK_WEIGHT_MIN}
 };
 
+static uint8_t task_registry_size(void)
+{
+    return (uint8_t)ARRAY_LEN(g_task_specs);
+}
+
 static uint8_t task_name_equals(const uint8_t *name, const uint8_t *lit)
 {
     uint8_t i = 0u;
 
-    if ((name == (const uint8_t *)0) || (lit == (const uint8_t *)0)) {
+    if (name == (const uint8_t *)0) {
         return 0u;
     }
 
@@ -38,12 +43,9 @@ static uint8_t task_name_equals(const uint8_t *name, const uint8_t *lit)
 const task_spec_t *task_registry_find(const uint8_t *name)
 {
     uint8_t i;
+    uint8_t count = task_registry_size();
 
-    if (name == (const uint8_t *)0) {
-        return (const task_spec_t *)0;
-    }
-
-    for (i = 0u; i < (uint8_t)ARRAY_LEN(g_task_specs); ++i) {
+    for (i = 0u; i < count; ++i) {
         if (task_name_equals(name, g_task_specs[i].name) != 0u) {
             return &g_task_specs[i];
         }
@@ -54,7 +56,7 @@ const task_spec_t *task_registry_find(const uint8_t *name)
 
 const task_spec_t *task_registry_get(uint8_t index)
 {
-    if (index >= (uint8_t)ARRAY_LEN(g_task_specs)) {
+    if (index >= task_registry_size()) {
         return (const task_spec_t *)0;
     }
 
@@ -63,5 +65,5 @@ const task_spec_t *task_registry_get(uint8_t index)
 
 uint8_t task_registry_count(void)
 {
-    return (uint8_t)ARRAY_LEN(g_task_specs);
+    return task_registry_size();
 }

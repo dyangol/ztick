@@ -19,10 +19,6 @@
 #define ZBUS_FRAME_MAX_LEN 64u
 #endif
 
-#ifndef ZBUS_TASK_SLOTS
-#define ZBUS_TASK_SLOTS 6u
-#endif
-
 #ifndef ZBUS_INVALID_TTY_ID
 #define ZBUS_INVALID_TTY_ID 0xFFu
 #endif

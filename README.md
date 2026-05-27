@@ -28,7 +28,7 @@ Els sistemes MSX van aparèixer el 1983 i estaven basats en un processador Zilog
 * Processos d'accés a memòria en qualsevol dels _slots_
 * Processos I/O a dispositius externs, vinculats a un _slot_
 
-A través d'un procediment anomenat _Memory Switching_, és possible vincular les pàgines amb els _slots_, a través de crides I/O a un dispositiu també nadiu del MSX anomenat PPI. Aquesta part del maquinari és la que estableix els canals de comunicació entre les pàgines de l'espai adreçable i les pàgines de recursos. Podem imaginar el _Memory Switching_ com l'establiment de canals o _pipes_ entre elles. **Els _pipes_ només es poden establir entre pàgines amb el mateix índex**. Quan acaba, el processador pot continuar amb les instruccions (_Instruction Fetch_).
+A través d'un procediment anomenat _Memory Switching_, és possible vincular les pàgines amb els _slots_, a través de crides I/O a un dispositiu també nadiu del MSX anomenat PPI. Aquesta part del maquinari és la que estableix els canals de comunicació entre les pàgines de l'espai adreçable i les pàgines de recursos. Podem imaginar el _Memory Switching_ com l'establiment de canals entre elles. **Els canals només es poden establir entre pàgines amb el mateix índex**. Quan acaba, el processador pot continuar amb les instruccions (_Instruction Fetch_).
 
 Tant el procés que estableix un _Memory Switching_ com el que executa tasques orientades a usuari han de satisfer certes condicions. Per exemple, si s'executa un _Memory Switching_ tal que els registres PC o SP del Z80 apunten a una adreça d'una pàgina commutada, el Z80 no serà capaç de continuar l'execució del programa original. **És responsabilitat del programador executar el _Memory Switching_ sobre pàgines no referenciades pels registres de context PC i SP.**
 
@@ -47,7 +47,7 @@ Si el Z80 executa:
 ```
 out (0xA8), 0x00
 ```
-es realitza el _Memory Switching_. L'establiment dels _pipes_ entre pàgines es fa a través del _Primary Slot Register_ (PSR), és a dir, un valor de 8 bits dividit en 4 grups de 2 bits. Cada parella de 2 bits (4 possibles valors) representa el número de _slot_ al qual van connectades les pàgines: `espai d'adreces <-> _slot_`. La posició dels 2 bits representa el número de pàgina. En aquest cas, el _Primary Slot Register_ val `0x00`. Això vol dir:
+es realitza el _Memory Switching_. L'establiment dels canals entre pàgines es fa a través del _Primary Slot Register_ (PSR), és a dir, un valor de 8 bits dividit en 4 grups de 2 bits. Cada parella de 2 bits (4 possibles valors) representa el número de _slot_ al qual van connectades les pàgines: `espai d'adreces <-> _slot_`. La posició dels 2 bits representa el número de pàgina. En aquest cas, el _Primary Slot Register_ val `0x00`. Això vol dir:
 
 ```
 Ordre del bit: 7  6  5  4  3  2  1  0
@@ -98,7 +98,7 @@ El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O
 
 Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink`fa servir número de seqüència (`SEQ`). També permet multiplexar diversos dispositius tipus `TTY`, en concret del `TTY0` al `TTY15`.
 
-**Format de la trama `zlink`**
+## Format de la trama `zlink`**
 El _header_ de `zlink` està format per aquest _bytes_:
 
 - `B0 = SOF5|TYPE3`
@@ -118,8 +118,7 @@ El _header_ de `zlink` està format per aquest _bytes_:
 - `PAYLOAD = LEN bytes`
 - `CRC8` (1 byte) sobre `B0..B(3+LEN)`, polinomi `0x07`, init `0x00`, xorout `0x00`
 
-**Longitud total frame**
-- `5 + LEN` bytes (mínim 5, màxim 69)
+La longitud total de la trama es troba entre 5 i 69 _bytes_.
 
 **Regles de protocol**
 - `POLL/EMPTY/ACK/NACK`: `LEN=0`

@@ -25,24 +25,16 @@ static uint8_t pipe_strlen_u8(const uint8_t *text)
     return len;
 }
 
-static uint8_t pipe_try_write_bytes(const uint8_t *data, uint8_t len)
-{
-    uint8_t written;
-
-    if ((data == (const uint8_t *)0) || (len == 0u)) {
-        return 0u;
-    }
-
-    written = zbus_write(data, len);
-    return (written == len) ? 1u : 0u;
-}
-
-void pipe_write_bytes(const uint8_t *data, uint8_t len)
+static void pipe_write_bytes_retry(const uint8_t *data, uint8_t len)
 {
     uint8_t retries = PIPE_WRITE_RETRY_MAX;
 
+    if ((data == (const uint8_t *)0) || (len == 0u)) {
+        return;
+    }
+
     while (retries > 0u) {
-        if (pipe_try_write_bytes(data, len) != 0u) {
+        if (zbus_write(data, len) == len) {
             return;
         }
         retries--;
@@ -58,58 +50,12 @@ void pipe_write_cstr(const uint8_t *text)
         return;
     }
 
-    pipe_write_bytes(text, len);
-}
-
-static void pipe_write_u16_dec_inner(uint16_t value)
-{
-    uint8_t digits[5];
-    uint8_t count = 0u;
-    uint8_t i;
-
-    if (value == 0u) {
-        pipe_write_bytes((const uint8_t *)"0", 1u);
-        return;
-    }
-
-    while (value > 0u) {
-        digits[count] = (uint8_t)((value % 10u) + (uint8_t)'0');
-        value = (uint16_t)(value / 10u);
-        count++;
-    }
-
-    for (i = count; i > 0u; --i) {
-        pipe_write_bytes(&digits[i - 1u], 1u);
-    }
-}
-
-void pipe_write_u8_dec(uint8_t value)
-{
-    pipe_write_u16_dec_inner((uint16_t)value);
-}
-
-void pipe_write_u16_dec(uint16_t value)
-{
-    pipe_write_u16_dec_inner(value);
-}
-
-void pipe_write_u16_hex(uint16_t value)
-{
-    uint8_t buf[4];
-    uint8_t i;
-
-    for (i = 0u; i < 4u; ++i) {
-        uint8_t nibble = (uint8_t)((value >> (uint8_t)((3u - i) * 4u)) & 0x0Fu);
-        buf[i] = (nibble < 10u) ? (uint8_t)('0' + nibble) : (uint8_t)('A' + (nibble - 10u));
-    }
-
-    pipe_write_bytes((const uint8_t *)"0x", 2u);
-    pipe_write_bytes(buf, 4u);
+    pipe_write_bytes_retry(text, len);
 }
 
 void pipe_newline(void)
 {
-    pipe_write_bytes(g_pipe_crlf, (uint8_t)(sizeof(g_pipe_crlf) - 1u));
+    pipe_write_bytes_retry(g_pipe_crlf, (uint8_t)(sizeof(g_pipe_crlf) - 1u));
 }
 
 void pipe_flush(void)

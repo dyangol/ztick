@@ -63,11 +63,6 @@ static uint8_t zlink_type_is_control(uint8_t type)
         || (type == (uint8_t)ZLINK_TYPE_ACK) || (type == (uint8_t)ZLINK_TYPE_NACK)) ? 1u : 0u;
 }
 
-static uint8_t zlink_type_is_valid(uint8_t type)
-{
-    return (zlink_type_is_control(type) != 0u) || (type == (uint8_t)ZLINK_TYPE_DATA);
-}
-
 static uint8_t zlink_send_frame(uint8_t type, uint8_t seq, uint8_t tty, const uint8_t *payload, uint8_t len)
 {
     uint8_t frame_no_crc[4u + ZLINK_MAX_PAYLOAD];
@@ -169,7 +164,7 @@ static uint8_t zlink_read_frame(zlink_frame_t *out)
             COUNTER_INC16_SAT(&g_zlink_rx_len_err);
             return 0u;
         }
-    } else if (zlink_type_is_valid(type) == 0u) {
+    } else {
         COUNTER_INC16_SAT(&g_zlink_rx_type_err);
         return 0u;
     }
@@ -206,14 +201,9 @@ uint8_t zlink_send_data(uint8_t tty, const uint8_t *payload, uint8_t len)
     return zlink_send_frame((uint8_t)ZLINK_TYPE_DATA, seq, tty, payload, len);
 }
 
-uint8_t zlink_send_ack(uint8_t seq, uint8_t tty)
+static uint8_t zlink_send_control(uint8_t type, uint8_t seq, uint8_t tty)
 {
-    return zlink_send_frame((uint8_t)ZLINK_TYPE_ACK, seq, tty, (const uint8_t *)0, 0u);
-}
-
-uint8_t zlink_send_nack(uint8_t seq, uint8_t tty)
-{
-    return zlink_send_frame((uint8_t)ZLINK_TYPE_NACK, seq, tty, (const uint8_t *)0, 0u);
+    return zlink_send_frame(type, seq, tty, (const uint8_t *)0, 0u);
 }
 
 uint8_t zlink_poll_once(zlink_data_frame_t *out)
@@ -245,13 +235,13 @@ uint8_t zlink_poll_once(zlink_data_frame_t *out)
         }
 
         if ((in.tty >= ZLINK_MAX_TTY) || (in.len == 0u) || (in.len > ZLINK_MAX_PAYLOAD)) {
-            zlink_send_nack(in.seq, in.tty);
+            zlink_send_control((uint8_t)ZLINK_TYPE_NACK, in.seq, in.tty);
             COUNTER_INC16_SAT(&g_zlink_rx_len_err);
             return 0u;
         }
 
         if ((g_zlink_last_seq_valid[in.tty] != 0u) && (g_zlink_last_seq[in.tty] == in.seq)) {
-            zlink_send_ack(in.seq, in.tty);
+            zlink_send_control((uint8_t)ZLINK_TYPE_ACK, in.seq, in.tty);
             COUNTER_INC16_SAT(&g_zlink_rx_dup);
             return 0u;
         }
@@ -269,7 +259,7 @@ uint8_t zlink_poll_once(zlink_data_frame_t *out)
             }
         }
 
-        zlink_send_ack(in.seq, in.tty);
+        zlink_send_control((uint8_t)ZLINK_TYPE_ACK, in.seq, in.tty);
         COUNTER_INC16_SAT(&g_zlink_rx_frames_ok);
         return 1u;
     }

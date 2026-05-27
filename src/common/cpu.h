@@ -6,11 +6,4 @@
 #define CPU_NOP() __asm__("nop")
 #define CPU_HALT() __asm__("halt")
 
-#define CPU_CRITICAL(stmt) \
-    do {                   \
-        CPU_DI();          \
-        stmt;              \
-        CPU_EI();          \
-    } while (0)
-
 #endif
