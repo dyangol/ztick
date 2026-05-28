@@ -232,28 +232,6 @@ proc zlink_dev::emit_kernel_task_info_json {status len payload} {
 
         puts [format "{\"type\":\"kernel_task_info\",\"status\":0,\"id\":%u,\"tty\":%u,\"state\":%u,\"sp\":\"0x%04X\",\"name_len\":%u,\"name\":\"%s\"}" \
             $task_id $task_tty $task_state $task_sp $name_len $name_json]
-    } elseif {$status == 0 && $len >= 15} {
-        set task_id [u8 [lindex $payload 2]]
-        set task_state [u8 [lindex $payload 3]]
-        set task_tty 255
-        set task_sp [u16le [lindex $payload 4] [lindex $payload 5]]
-        set name_len [u8 [lindex $payload 6]]
-        if {$name_len > 8} {
-            set name_len 8
-        }
-        set name ""
-        for {set i 0} {$i < 8} {incr i} {
-            set b [u8 [lindex $payload [expr {7 + $i}]]]
-            if {$i < $name_len && $b >= 32 && $b <= 126} {
-                append name [format %c $b]
-            } elseif {$i < $name_len} {
-                append name "."
-            }
-        }
-        set name_json [string map {\\ \\\\ \" \\\"} $name]
-
-        puts [format "{\"type\":\"kernel_task_info\",\"status\":0,\"id\":%u,\"tty\":%u,\"state\":%u,\"sp\":\"0x%04X\",\"name_len\":%u,\"name\":\"%s\"}" \
-            $task_id $task_tty $task_state $task_sp $name_len $name_json]
     } else {
         puts [format "{\"type\":\"kernel_task_info\",\"status\":%u,\"len\":%u,\"payload_hex\":\"%s\"}" \
             $status $len [fmt_bytes $payload]]
@@ -268,23 +246,11 @@ proc zlink_dev::emit_kernel_task_list_json {status len payload} {
         set items {}
         set entry_size 11
 
-        if {($len - 3) >= [expr {$count * 11}]} {
-            set entry_size 11
-        } elseif {($len - 3) >= [expr {$count * 10}]} {
-            set entry_size 10
-        }
-
-        while {$parsed < $count && ($idx + ($entry_size - 1)) < $len} {
+        while {$parsed < $count && ($idx + 10) < $len} {
             set task_id [u8 [lindex $payload $idx]]
-            if {$entry_size == 11} {
-                set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
-                set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
-                set name_base [expr {$idx + 3}]
-            } else {
-                set task_tty 255
-                set name_len [u8 [lindex $payload [expr {$idx + 1}]]]
-                set name_base [expr {$idx + 2}]
-            }
+            set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
+            set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
+            set name_base [expr {$idx + 3}]
             if {$name_len > 8} {
                 set name_len 8
             }
@@ -839,25 +805,6 @@ proc zlink_dev::handle_msx_frame {frame} {
                 }
                 puts [format "zlink_dev: kernel task_info task_id=%u tty=%u state=%u sp=0x%04X name_len=%u name=%s" \
                     $task_id $task_tty $task_state $task_sp $name_len $task_name]
-            } elseif {$status == 0 && $len >= 15} {
-                set task_id [u8 [lindex $payload 2]]
-                set task_state [u8 [lindex $payload 3]]
-                set task_sp [u16le [lindex $payload 4] [lindex $payload 5]]
-                set name_len [u8 [lindex $payload 6]]
-                if {$name_len > 8} {
-                    set name_len 8
-                }
-                set task_name ""
-                for {set i 0} {$i < 8} {incr i} {
-                    set b [u8 [lindex $payload [expr {7 + $i}]]]
-                    if {$i < $name_len && $b >= 32 && $b <= 126} {
-                        append task_name [format %c $b]
-                    } elseif {$i < $name_len} {
-                        append task_name "."
-                    }
-                }
-                puts [format "zlink_dev: kernel task_info task_id=%u tty=- state=%u sp=0x%04X name_len=%u name=%s" \
-                    $task_id $task_state $task_sp $name_len $task_name]
             } else {
                 puts [format "zlink_dev: kernel task_info error status=%u len=%u payload=%s" \
                     $status $len [fmt_bytes $payload]]
@@ -875,22 +822,11 @@ proc zlink_dev::handle_msx_frame {frame} {
                 set parsed 0
                 set items {}
                 set entry_size 11
-                if {($len - 3) >= [expr {$count * 11}]} {
-                    set entry_size 11
-                } elseif {($len - 3) >= [expr {$count * 10}]} {
-                    set entry_size 10
-                }
-                while {$parsed < $count && ($idx + ($entry_size - 1)) < $len} {
+                while {$parsed < $count && ($idx + 10) < $len} {
                     set task_id [u8 [lindex $payload $idx]]
-                    if {$entry_size == 11} {
-                        set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
-                        set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
-                        set name_base [expr {$idx + 3}]
-                    } else {
-                        set task_tty -1
-                        set name_len [u8 [lindex $payload [expr {$idx + 1}]]]
-                        set name_base [expr {$idx + 2}]
-                    }
+                    set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
+                    set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
+                    set name_base [expr {$idx + 3}]
                     if {$name_len > 8} {
                         set name_len 8
                     }
@@ -963,7 +899,6 @@ proc zlink_dev::parse_tx_stream {} {
             break
         }
 
-        set b1 [lindex $tx_stream 1]
         set b2 [lindex $tx_stream 2]
         set len [u8 $b2]
         set needed [expr {5 + $len}]
@@ -988,14 +923,14 @@ proc zlink_dev::parse_tx_stream {} {
     }
 }
 
-proc zlink_dev::on_output {io_port value} {
+proc zlink_dev::on_output {_io_port value} {
     variable tx_stream
 
     lappend tx_stream [u8 $value]
     parse_tx_stream
 }
 
-proc zlink_dev::on_input {io_port} {
+proc zlink_dev::on_input {_io_port} {
     variable stat_in_calls
     variable stat_in_data
     variable stat_in_ff

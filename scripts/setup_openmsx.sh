@@ -94,6 +94,8 @@ TARGET_MANIFEST="$ROOT_DIR/targets/$TARGET.mk"
 TARGET_BIN_DIR="$ROOT_DIR/bin/$TARGET"
 SYMBOL_FILE="$TARGET_BIN_DIR/bootstrap.noi"
 LEGACY_SYMBOL_FILE="$ROOT_DIR/bin/bootstrap.noi"
+OPENMSX_IMGUI_INI="$OPENMSX_HOME_DIR/share/imgui.ini"
+IMGUI_SYMBOL_FILE=""
 ZLINK_TCL="$ROOT_DIR/openmsx/zlink.tcl"
 
 manifest_get() {
@@ -155,6 +157,21 @@ if [ ! -f "$SYMBOL_FILE" ]; then
     exit 1
 fi
 
+# openMSX GUI (ImGui) can persist an old symbol file path and try to load it at boot.
+# Keep it aligned with the current target to avoid stale path warnings.
+if [ -f "$OPENMSX_IMGUI_INI" ]; then
+    IMGUI_SYMBOL_FILE="$(awk -F '=' '/^symbolfile=/ { print $2; exit }' "$OPENMSX_IMGUI_INI")"
+
+    if [ -n "$IMGUI_SYMBOL_FILE" ] && [ "$IMGUI_SYMBOL_FILE" != "$SYMBOL_FILE" ]; then
+        echo "INFO: Migrating openMSX persisted symbolfile path:" >&2
+        echo "  from: $IMGUI_SYMBOL_FILE" >&2
+        echo "    to: $SYMBOL_FILE" >&2
+        TMP_IMGUI_INI="$(mktemp)"
+        sed "s|^symbolfile=.*$|symbolfile=$SYMBOL_FILE|" "$OPENMSX_IMGUI_INI" > "$TMP_IMGUI_INI"
+        mv "$TMP_IMGUI_INI" "$OPENMSX_IMGUI_INI"
+    fi
+fi
+
 MAIN_SHELL_ADDR="$(awk '/DEF _main_shell / { print $3; exit }' "$SYMBOL_FILE")"
 if [ -z "$MAIN_SHELL_ADDR" ]; then
     echo "Symbol _main_shell not found in $SYMBOL_FILE" >&2
@@ -163,6 +180,10 @@ fi
 
 # Keep compatibility with legacy openMSX persisted paths.
 ln -sf "$SYMBOL_FILE" "$LEGACY_SYMBOL_FILE"
+if [ -n "$IMGUI_SYMBOL_FILE" ] && [ "$IMGUI_SYMBOL_FILE" != "$SYMBOL_FILE" ]; then
+    mkdir -p "$(dirname "$IMGUI_SYMBOL_FILE")"
+    ln -sf "$SYMBOL_FILE" "$IMGUI_SYMBOL_FILE"
+fi
 
 MACHINE_XML_SOURCE="$ROOT_DIR/openmsx/$OPENMSX_MACHINE_XML"
 ROM_SOURCE="$TARGET_BIN_DIR/$ROM_IMAGE_NAME"

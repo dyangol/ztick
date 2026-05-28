@@ -117,13 +117,37 @@ El _header_ de `zlink` està format per aquest _bytes_:
 - `PAYLOAD = LEN bytes`
 - `CRC8` (1 byte) sobre `B0..B(3+LEN)`, polinomi `0x07`, init `0x00`, xorout `0x00`
 
-La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada cicle de recepció enviant una trama `POLL` sense payload. El _host_ respon immediatament amb `EMPTY` si no hi ha dades pendents, o amb `DATA` si n'hi ha. Quan el MSX rep una trama `DATA` vàlida, entrega el payload al `TTY` indicat i retorna `ACK` amb el mateix `SEQ`. Si arriba una `DATA` amb error de format (p. ex. `LEN` invàlid), el MSX respon `NACK` del `SEQ` rebut i no entrega payload. En el cas que arribi una `DATA` duplicada (`SEQ` idèntic a l'últim ja acceptat per aquell `TTY`), el MSX no la torna a processar i respon `ACK` per evitar una re execució. `zlink` només transporta trames i multiplexa `TTY`; l'assignació de cada `TTY` a tasques/processos la fa `zbus`.
+La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada cicle de recepció enviant una trama `POLL` sense payload. El _host_ respon immediatament amb `EMPTY` si no hi ha dades pendents, o amb `DATA` si n'hi ha. Quan el MSX rep una trama `DATA` vàlida, entrega el payload al `TTY` indicat i retorna `ACK` amb el mateix `SEQ`. Si arriba una `DATA` duplicada (`SEQ` idèntic a l'últim ja acceptat per aquell `TTY`), el MSX no la torna a processar i respon `ACK` per evitar una reexecució. El `NACK` només s'emet en el camí de recepció de `DATA` quan la trama és llegible però els camps no són acceptables per entrega (p. ex. `TTY` fora de rang o `LEN` invàlid); en altres errors de lectura/validació de trama la dada es descarta. `zlink` només transporta trames i multiplexa `TTY`; l'assignació de cada `TTY` a tasques/processos la fa `zbus`.
 
 `zlink` és deliberadament asimètric. El costat MSX no pot observar directament l'estat de disponibilitat del bridge (`RXF#`/`TXE#`) ni disposa d'un senyal de tipus `DATA_READY`, de manera que la recepció `host -> MSX` es basa en `POLL` periòdic del MSX (`POLL -> DATA|EMPTY`). Tot i que el host sí que pot tenir aquests senyals, aquesta informació no és visible pel MSX i, per tant, el protocol prioritza simplicitat i robustesa al costat MSX en lloc de forçar una simetria completa.
 
+# `zbus`
+`zbus` és la capa superior a `zlink`: gestiona la semàntica de canals, l'aïllament entre tasques i les cues RX/TX. Mentre `zlink` només transporta trames, `zbus` decideix a qui pertany cada `TTY`, quan s'hi poden afegir dades a la cua i com es lliuren al consumidor.
+
+Funcionament explícit de la capa:
+
+- **Assignació de canals (`TTY`)**
+  - `zbus` manté una taula de `TTY` (fins a `ZBUS_MAX_TTY=10`, de `TTY0` a `TTY9`) associats a una task propietària.
+  - Cada `TTY` es pot `attach`/`detach`, i les operacions de lectura/escriptura només són vàlides per la task propietària.
+- **Camí TX (MSX -> host)**
+  - `zbus_write_tty()` encola trames de fins a `64` bytes en una cua per `TTY` (`ZBUS_TX_QUEUE_SIZE=8`).
+  - Si la cua és plena, la trama es descarta i s'incrementa el comptador `tx_drop`.
+  - `zbus_tick()` envia dades en *round-robin* entre `TTY` actius, amb límit de `ZBUS_TX_CHUNK=2` trames per tick, usant `zlink_send_data()`.
+- **Camí RX (host -> MSX)**
+  - A cada `tick`, `zbus` fa `poll` de `zlink` (`zlink_poll_once()`), amb límit `ZBUS_RX_CHUNK=1` trama per tick.
+  - Si la trama és d'un `TTY` d'usuari vàlid i amb `rx_polling_enabled`, el payload s'afegeix al buffer circular RX (`ZBUS_BUFFER_SIZE=96`).
+  - Si el buffer RX és ple, la resta de bytes es descarten i s'incrementa `rx_overflow`.
+  - Les tasques recuperen bytes amb `zbus_read_tty()` (o `zbus_read()` en mode legacy).
+- **Canal de control del kernel (`tty=15`)**
+  - `TTY15` està reservat i no es mapeja a cap task d'usuari.
+  - Les trames rebudes a `tty=15` activen comandes de control (`GET_STATS`, `GET_TASK_INFO`, `GET_TASK_LIST`, `GET_STACK_WM`) i `zbus` respon pel mateix canal amb `RSP_*`.
+- **Integritat i estadístiques**
+  - `zbus` agrega comptadors propis (`tx_drop`, `rx_overflow`, `attach_fail`) i els de diagnòstic de `zlink` (`rx_crc_err`, `rx_dup`, etc.).
+  - Les seccions crítiques s'executen amb `CPU_DI()/CPU_EI()` per protegir taules i cues compartides.
+
 La `tty=15` està reservada pel _kernel_. Les consultes via `tty=15` són el canal de control del _kernel_ (control-plane). A diferència dels `TTY` d'usuari, aquestes trames no s'entreguen a cap una tasca d'aplicació: el _kernel_ les interpreta com a comandes de diagnòstic/inspecció i retorna una resposta estructurada (`RSP_*`) pel mateix `tty=15`. Això permet monitoratge i automatització (stats, estat de tasks, stack watermark) sense barrejar aquest tràfic amb la shell o les dades normals dels processos.
 
-Les següents seccions donen detalls dels missatges intercanviats per `zlink` a través de `tty=15`.
+Les següents seccions donen detalls dels missatges de control del _kernel_ intercanviats via `tty=15` sobre `zbus`/`zlink`.
 
 ## Estadístiques
 Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar pèrdues, errors i saturació.
@@ -158,7 +182,7 @@ Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer est
   - payload `02 <task_id>` (`GET_TASK_INFO` d'un task concret)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `82` (`RSP_TASK_INFO`)
-  - `status` (`00=OK`, `01=BAD_CMD`, `02=BAD_LEN`, `03=BAD_TASK`)
+  - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
   - `task_id`
   - `task_state`
   - `task_tty`
@@ -207,7 +231,7 @@ Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `sta
   - payload `07 <task_id>` (`GET_STACK_WM` d'un task concret)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `87` (`RSP_STACK_WM`)
-  - `status` (`00=OK`, `01=BAD_CMD`, `02=BAD_LEN`, `03=BAD_TASK`)
+  - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
   - `task_id`
   - `task_state`
   - `stack_size_lo stack_size_hi` (`uint16 little-endian`)
