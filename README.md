@@ -1,83 +1,83 @@
-# Notes de disseny
-El sistema MSX està basat en un maquinari que respon a una arquitectura estàndard. És relativament senzill i està pensat per arrencar software de consum, bàsicament jocs.
-A meitat de camí entre un experiment excèntric i un desafiament personal, volem dur a terme un projecte que faci que un sistema MSX faci:
+# Design Notes
+The MSX system is based on hardware that follows a standard architecture. It is relatively simple and was designed to boot consumer software, mainly games.
+Halfway between an eccentric experiment and a personal challenge, we want to carry out a project that makes an MSX system provide:
 
-* L'establiment d'un canal de comunicació amb sistemes externs, que permet la transmissió de dades entre el port d'expansió MSX i un port USB
-* L'execució de processos executats per multiplexació per temps basats en el senyal d'interrupció nadiu de MSX (VDP) cada 20 ms (50 Hz): un sistema operatiu de temps real (RTOS)
+* A communication channel with external systems, enabling data transfer between the MSX expansion port and a USB port
+* Process execution through time multiplexing based on the native MSX interrupt signal (VDP) every 20 ms (50 Hz): a real-time operating system (RTOS)
 
-Dividim el projecte en dues fases de desenvolupament que poden dur-se a terme de manera independent. D'una banda, el programari que permetrà les característiques plantejades i de l'altra, el desenvolupament de la interfície de maquinari (i el seu programari associat) que haurà de permetre la pretesa comunicació.
+We split the project into two development phases that can be carried out independently. On one side, the software that will provide the proposed features; on the other, the hardware interface development (and its associated software) that will enable the intended communication.
 
-En última instància, el projecte pretén establir una plataforma per avaluar problemes de maquinari del propi MSX, executar, monitoritzar i transferir dades amb sistemes externs moderns.
+Ultimately, the project aims to establish a platform to evaluate MSX hardware issues, execute and monitor tasks, and transfer data with modern external systems.
 
-## Arquitectura del MSX
-En primer lloc, cal conèixer els principis bàsics de funcionament d'un sistema MSX. Una mirada superficial apreciarà els aspectes més evidents, com ara la simplicitat de funcionament. Tanmateix, la seva aparent simplicitat imposa fortes restriccions a l'hora d'assolir els objectius previstos.
+## MSX Architecture
+First, we need to understand the basic operating principles of an MSX system. A superficial look highlights obvious aspects such as operational simplicity. However, this apparent simplicity imposes strong constraints when trying to achieve the proposed goals.
 
-Aquests sistemes estaven pensats per executar programes de manera directa i de forma ràpida. Després d'un _power on_, el MSX executa una fase de _startup_ de codi ubicat en una ROM. Aquest processador sempre llegeix la primera instrucció a l'adreça `0x0000`. És a dir, el primer codi que llegeix és a les primeres adreces. Aquest conté rutines que només s'executen en el moment del _startup_ i també d'altres que poden executar-se en una fase posterior per altres programes. Les tasques que es duen a terme durant aquesta fase inicial són bàsicament la inicialització del maquinari i tests de memòria RAM.
+These systems were designed to execute programs directly and quickly. After power-on, the MSX executes a startup phase from code located in ROM. This processor always reads the first instruction at address `0x0000`. In other words, the first code it reads is at the first addresses. That code contains routines that run only during startup, and others that can run later for other programs. Tasks performed during this initial phase are mainly hardware initialization and RAM tests.
 
-Els sistemes MSX van aparèixer el 1983 i estaven basats en un processador Zilog Z80. Aquest processador té un bus de dades de 8 bits i un d'adreces de 16 bits. En conseqüència, pot accedir a 65536 adreces de memòria. Els sistemes MSX venien equipats amb entre 16KB i 64KB de memòria RAM, però podien ser ampliats en recursos i per tant, accedir a més de 64KB de memòria. Els enginyers que van crear el MSX varen incorporar una funció que permet exposar rangs d'adreces de memòria _visibles_ pel processador a maquinari extern. El que van fer és crear els conceptes d'_slots_ i _pages_. La idea és presentar al Z80 un **espai d'adreces** com interfície única d'intercanvi d'informació (instruccions o dades) amb l'exterior. No hem de confondre aquest espai d'adreces amb una memòria física concreta, sinó més aviat com una capa d'abstracció. Aquest espai està dividit en 4 subespais anomenats _pages_, que consten d'un interval d'adreces consecutives de 16KB cadascun:
+MSX systems appeared in 1983 and were based on a Zilog Z80 processor. This processor has an 8-bit data bus and a 16-bit address bus. Consequently, it can access 65,536 memory addresses. MSX systems shipped with between 16 KB and 64 KB of RAM, but could be expanded with additional resources and therefore access more than 64 KB. The engineers who created the MSX introduced a feature that exposes memory address ranges _visible_ to the processor on external hardware. They created the concepts of _slots_ and _pages_. The idea is to present the Z80 with an **address space** as a single interface for exchanging information (instructions or data) with the outside world. We should not confuse this address space with a specific physical memory, but rather see it as an abstraction layer. This space is divided into 4 subspaces called _pages_, each covering a contiguous 16 KB address range:
 
-| Pàgina | Interval d'adreces |
+| Page | Address Range |
 |:---|:---|
 | 0 | `0x0000-0x3FFF` |
 | 1 | `0x4000-0x7FFF` |
 | 2 | `0x8000-0xBFFF` |
 | 3 | `0xC000-0xFFFF` |
 
-[L'estàndard MSX](https://map.grauw.nl/resources/system/msxtech.pdf) no defineix amb precisió el concepte de _slot_. En aquest document el definim com **un conjunt de recursos de maquinari que poden ser accessibles pel Z80 a través d'una adreça de 16 bits**. [L'estàndard MSX](https://map.grauw.nl/resources/system/msxtech.pdf) permet fins a 4 _slots_, indexats del 0 al 3. Els _slots_ també poden ser dividits en subespais adreçables de 16KB (pàgines). A través dels _slots_ el processador pot dur a terme:
+[The MSX standard](https://map.grauw.nl/resources/system/msxtech.pdf) does not precisely define the concept of _slot_. In this document we define it as **a set of hardware resources that can be accessed by the Z80 through a 16-bit address**. [The MSX standard](https://map.grauw.nl/resources/system/msxtech.pdf) allows up to 4 _slots_, indexed from 0 to 3. Slots can also be divided into addressable 16 KB subspaces (pages). Through slots, the processor can perform:
 
-* Processos d'accés a memòria en qualsevol dels _slots_
-* Processos I/O a dispositius externs, vinculats a un _slot_
+* Memory access operations on any slot
+* I/O operations to external devices associated with a slot
 
-A través d'un procediment anomenat _Memory Switching_, és possible vincular les pàgines amb els _slots_, a través de crides I/O a un dispositiu també nadiu del MSX anomenat PPI. Aquesta part del maquinari és la que estableix els canals de comunicació entre les pàgines de l'espai adreçable i les pàgines de recursos. Podem imaginar el _Memory Switching_ com l'establiment de canals entre elles. **Els canals només es poden establir entre pàgines amb el mateix índex**. Quan acaba, el processador pot continuar amb les instruccions (_Instruction Fetch_).
+Through a procedure called _Memory Switching_, it is possible to bind pages to slots using I/O calls to another native MSX device called the PPI. This hardware part establishes communication channels between address-space pages and resource pages. We can think of _Memory Switching_ as setting up channels between them. **Channels can only be established between pages with the same index**. Once done, the processor can continue with instruction fetch.
 
-Tant el procés que estableix un _Memory Switching_ com el que executa tasques orientades a usuari han de satisfer certes condicions. Per exemple, si s'executa un _Memory Switching_ tal que els registres PC o SP del Z80 apunten a una adreça d'una pàgina commutada, el Z80 no serà capaç de continuar l'execució del programa original. **És responsabilitat del programador executar el _Memory Switching_ sobre pàgines no referenciades pels registres de context PC i SP.**
+Both the process that performs _Memory Switching_ and the one that runs user-oriented tasks must satisfy certain conditions. For example, if _Memory Switching_ is executed while the Z80 PC or SP registers point to an address in a switched page, the Z80 will not be able to continue execution of the original program. **It is the programmer's responsibility to execute _Memory Switching_ on pages not referenced by the PC and SP context registers.**
 
-L'estàndard preveu l'existència d'un _slot 0_, que incorpora certs recursos de manera interna o integrada en el sistema. La seva configuració concreta no s'especifica, però sembla que com a mínim ha d'incorporar 32KB de ROM. Els _slots_ diferents del 0 poden tenir una projecció física en forma de port d'expansió. En aquest aspecte, l'estàndard era flexible i cada fabricant podria habilitar configuracions de maquinari diferents. Per fixar idees, mostrem tot seguit un exemple de procediment de _Memory Switching_.
+The standard assumes a _slot 0_, which includes certain resources internally/integrated in the system. Its exact configuration is not specified, but it appears to include at least 32 KB of ROM. Slots other than 0 may have a physical projection as an expansion port. In this regard, the standard was flexible and each manufacturer could enable different hardware configurations. To make the idea concrete, below is an example of a _Memory Switching_ procedure.
 
-Si el Z80 executa:
+If the Z80 executes:
 ```
 out (0xAB), 0x82
 ```
-Aquesta instrucció estableix el mode d'operació del subsistema PPI. Aquest compta amb tres ports interns connectats a diferents agrupacions de maquinari intern: A, B i C. Els ports poden transferir dades entre el maquinari i el Z80. El port rellevant durant el _Memory Switching_ és l'A, i està vinculat a qualsevol dispositiu diferent del teclat i la unitat de _cassette_. En concret, el que fem aquí és configurar el port A en mode _normal_, amb el sentit de les dades del Z80 a l'_exterior_ (output).
+This instruction sets the operating mode of the PPI subsystem. It has three internal ports connected to different groups of internal hardware: A, B and C. The ports can transfer data between hardware and the Z80. The relevant port during _Memory Switching_ is A, linked to any device other than the keyboard and cassette unit. Specifically, here we configure port A in _normal_ mode, with data direction from the Z80 to the outside (output).
 
-Tot i que les configuracions dels ports B i C no són rellevants en aquest projecte, les descriurem breument. El port B, està vinculat al maquinari de teclat. En concret, li diem que es posi en mode _normal_, i en sentit del teclat cap al Z80. El port C està vinculat a la unitat de _cassette_ i al LED de la tecla de majúscules. De fet, la meitat del bus del port està dedicat al _cassette_ i l'altra al LED. També es configurarà en mode _normal_ en el sentit Z80 cap a l'_exterior_.
+Although the configurations of ports B and C are not relevant in this project, we briefly describe them. Port B is linked to keyboard hardware. Specifically, we set it in _normal_ mode, with direction from keyboard to Z80. Port C is linked to the cassette unit and the Caps Lock LED. In fact, half of this port bus is dedicated to cassette and the other half to the LED. It is also configured in _normal_ mode with direction from Z80 to the outside.
 
-Si el Z80 executa:
+If the Z80 executes:
 
 ```
 out (0xA8), 0x00
 ```
-es realitza el _Memory Switching_. L'establiment dels canals entre pàgines es fa a través del _Primary Slot Register_ (PSR), és a dir, un valor de 8 bits dividit en 4 grups de 2 bits. Cada parella de 2 bits (4 possibles valors) representa el número de _slot_ al qual van connectades les pàgines: `espai d'adreces <-> _slot_`. La posició dels 2 bits representa el número de pàgina. En aquest cas, el _Primary Slot Register_ val `0x00`. Això vol dir:
+_Memory Switching_ takes place. Channel mapping between pages is done through the _Primary Slot Register_ (PSR), i.e. an 8-bit value divided into 4 groups of 2 bits. Each pair of 2 bits (4 possible values) represents the slot number connected to each page: `address space <-> slot`. The position of the 2-bit pair represents the page number. In this case, the _Primary Slot Register_ is `0x00`. That means:
 
 ```
-Ordre del bit: 7  6  5  4  3  2  1  0
-          PSR: 0  0  0  0  0  0  0  0
-          ---------------------------
-         Slot: 0     0     0     0
-         Page: 3     2     1     0
+Bit order: 7  6  5  4  3  2  1  0
+      PSR: 0  0  0  0  0  0  0  0
+      ---------------------------
+     Slot: 0     0     0     0
+     Page: 3     2     1     0
 ```
-El _Memory Switching_ estableix doncs totes les pàgines de l'espai d'adreces al mateix _slot_. Aquesta és de fet, la configuració per defecte que adquireix el maquinari en el moment de l'inici del _power on_.
+So _Memory Switching_ maps all address-space pages to the same slot. This is in fact the default hardware configuration at power-on start.
 
-És important notar que la configuració de maquinari dels _slots_ depèn del model de MSX concret. Per exemple, els MSX HB-55P de Sony incorporava aquesta configuració de _slot 0_:
-| Pàgina | Interval d'adreces | Recurs |
+It is important to note that slot hardware configuration depends on the specific MSX model. For example, the Sony MSX HB-55P included this _slot 0_ configuration:
+| Page | Address Range | Resource |
 |:---|:---|:---|
 | 0 | `0x0000-0x3FFF` | ROM |
 | 1 | `0x4000-0x7FFF` | ROM Basic |
 | 2 | `0x8000-0xBFFF` | ROM Personal Data Bank |
 | 3 | `0xC000-0xFFFF` | RAM |
 
-És a dir, el HB-55P tenia 16KB de RAM nadiua. El MSX HB-75P en canvi, tenia aquesta configuració de _slot 0_:
+That is, the HB-55P had 16 KB of native RAM. The MSX HB-75P instead had this _slot 0_ configuration:
 
-| Pàgina | Interval d'adreces | Recurs |
+| Page | Address Range | Resource |
 |:---|:---|:---|
 | 0 | `0x0000-0x3FFF` | ROM |
 | 1 | `0x4000-0x7FFF` | ROM Basic |
 | 2 | `0x8000-0xBFFF` | ROM Personal Data Bank |
 | 3 | `0xC000-0xFFFF` | unassigned |
 
-En aquest cas, Sony va reservar un slot intern complet (_slot 2_) per la RAM i assolir els 64KB:
+In this case, Sony reserved a full internal slot (_slot 2_) for RAM to reach 64 KB:
 
-| Pàgina | Interval d'adreces | Recurs |
+| Page | Address Range | Resource |
 |:---|:---|:---|
 | 0 | `0x0000-0x3FFF` | RAM |
 | 1 | `0x4000-0x7FFF` | RAM |
@@ -85,20 +85,20 @@ En aquest cas, Sony va reservar un slot intern complet (_slot 2_) per la RAM i a
 | 3 | `0xC000-0xFFFF` | RAM |
 
 
-## Disseny del Sistema Operatiu
-Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flash i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flash i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flash proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flash pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tots el programari necessari sense necessitar la RAM integrada.
+## Operating System Design
+One of the first project decisions is replacing the original ROM with a new one that includes basic boot routines. To facilitate development cycles on original hardware, we design a new expansion board that includes both flash memory and RAM, since EPROM/EEPROM memories are significantly more expensive than flash and store less data. This board is installed in a cartridge slot. But if we want this flash to provide startup code to the Z80, we must remove the original ROM and intercept the ROM selection signal, because _slot 0_ is active when the MSX experiences power-on. The code stored in flash can perform memory switching to expose RAM pages from the same board. In other words, it becomes possible to run all required software without relying on integrated RAM.
 
-Aquesta nova targeta està basada en la memòria flash multi propòsit SST39SF010A de tipus CMOS. Té una capacitat de 1048576 bits amb bus d'accés de dades de 8 bits. L'espai adreçable és de 17 bits, que permet reservar dos espais adjacents de 65536 bits (64KB). Concretament:
+This new board is based on the SST39SF010A multipurpose CMOS flash memory. It has a capacity of 1,048,576 bits with an 8-bit data access bus. The address space is 17 bits, allowing two adjacent spaces of 65,536 bits (64 KB) each. Specifically:
 
-* De `0x00000` a `0x0FFFF` : `bootloader` seleccionat quan el senyal `ROM_OE` és generat
-* De `0x10000` a `0x1FFFF` : `startup`, RTOS i processos d'usuari
+* From `0x00000` to `0x0FFFF`: `bootloader` selected when `ROM_OE` is asserted
+* From `0x10000` to `0x1FFFF`: `startup`, RTOS and user processes
 
-# Protocol `zlink`
-El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O amb Z80. No incorpora cap interfície de maquinari que permeti detectar l'arribada de dades noves i activar interrupcions especialitzades. Per resoldre-ho, fem servir un protocol de capa d'enllaç anomenat `zlink`, situat sota `zbus`, per resoldre RX sense senyals de tipus `DATA_READY`.
+# `zlink` Protocol
+The MSX system has limitations for transferring and receiving I/O data with the Z80. It does not include a hardware interface able to detect incoming data and trigger specialized interrupts. To solve this, we use a link-layer protocol called `zlink`, under `zbus`, to handle RX without `DATA_READY`-type signals.
 
-Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink` fa servir número de seqüència (`SEQ`). També permet multiplexar diversos canals tipus `TTY`, en concret del `TTY0` al `TTY15`.
+To detect availability of a new frame versus one already processed, `zlink` uses a sequence number (`SEQ`). It also multiplexes multiple `TTY` channels, specifically from `TTY0` to `TTY15`.
 
-El _header_ de `zlink` està format per aquest _bytes_:
+The `zlink` header uses these bytes:
 
 - `B0 = SOF5|TYPE3`
   - `SOF5` (bits `7..3`) = `0b10101`
@@ -108,55 +108,55 @@ El _header_ de `zlink` està format per aquest _bytes_:
     - `2` `DATA`
     - `3` `ACK`
     - `4` `NACK`
-    - `5..7` reservat
+    - `5..7` reserved
 - `B1 = TTY8`
-  - `TTY` (`0..15`; bits alts reservats)
+  - `TTY` (`0..15`; upper bits reserved)
 - `B2 = LEN8`
   - `LEN` (`0..64`)
-- `B3 = SEQ` (`0..255`, mòdul 256)
+- `B3 = SEQ` (`0..255`, modulo 256)
 - `PAYLOAD = LEN bytes`
-- `CRC8` (1 byte) sobre `B0..B(3+LEN)`, polinomi `0x07`, init `0x00`, xorout `0x00`
+- `CRC8` (1 byte) over `B0..B(3+LEN)`, polynomial `0x07`, init `0x00`, xorout `0x00`
 
-La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada cicle de recepció enviant una trama `POLL` sense payload. El _host_ respon immediatament amb `EMPTY` si no hi ha dades pendents, o amb `DATA` si n'hi ha. Quan el MSX rep una trama `DATA` vàlida, entrega el payload al `TTY` indicat i retorna `ACK` amb el mateix `SEQ`. Si arriba una `DATA` duplicada (`SEQ` idèntic a l'últim ja acceptat per aquell `TTY`), el MSX no la torna a processar i respon `ACK` per evitar una reexecució. El `NACK` només s'emet en el camí de recepció de `DATA` quan la trama és llegible però els camps no són acceptables per entrega (p. ex. `TTY` fora de rang o `LEN` invàlid); en altres errors de lectura/validació de trama la dada es descarta. `zlink` només transporta trames i multiplexa `TTY`; l'assignació de cada `TTY` a tasques/processos la fa `zbus`.
+Total frame length is between 5 and 69 bytes. The MSX starts each receive cycle by sending a `POLL` frame with no payload. The host responds immediately with `EMPTY` if there is no pending data, or `DATA` if there is. When the MSX receives a valid `DATA` frame, it delivers the payload to the indicated `TTY` and returns `ACK` with the same `SEQ`. If a duplicate `DATA` arrives (`SEQ` equal to the last one already accepted for that `TTY`), the MSX does not process it again and responds `ACK` to avoid re-execution. `NACK` is emitted only on the `DATA` receive path when the frame is readable but fields are unacceptable for delivery (e.g. out-of-range `TTY` or invalid `LEN`); in other frame read/validation errors, data is dropped. `zlink` only transports frames and multiplexes `TTY`; assignment of each `TTY` to tasks/processes is handled by `zbus`.
 
-`zlink` és deliberadament asimètric. El costat MSX no pot observar directament l'estat de disponibilitat del bridge (`RXF#`/`TXE#`) ni disposa d'un senyal de tipus `DATA_READY`, de manera que la recepció `host -> MSX` es basa en `POLL` periòdic del MSX (`POLL -> DATA|EMPTY`). Tot i que el host sí que pot tenir aquests senyals, aquesta informació no és visible pel MSX i, per tant, el protocol prioritza simplicitat i robustesa al costat MSX en lloc de forçar una simetria completa.
+`zlink` is deliberately asymmetric. The MSX side cannot directly observe bridge availability signals (`RXF#`/`TXE#`) and has no `DATA_READY`-type signal, so host -> MSX reception is based on periodic MSX polling (`POLL -> DATA|EMPTY`). Even if the host may have those signals, this information is not visible to the MSX and therefore the protocol prioritizes simplicity and robustness on the MSX side instead of enforcing full symmetry.
 
 # `zbus`
-`zbus` és la capa superior a `zlink`: gestiona la semàntica de canals, l'aïllament entre tasques i les cues RX/TX. Mentre `zlink` només transporta trames, `zbus` decideix a qui pertany cada `TTY`, quan s'hi poden afegir dades a la cua i com es lliuren al consumidor.
+`zbus` is the layer above `zlink`: it handles channel semantics, task isolation, and RX/TX queues. While `zlink` only transports frames, `zbus` decides who owns each `TTY`, when data can be queued, and how it is delivered to consumers.
 
-Funcionament explícit de la capa:
+Explicit layer behavior:
 
-- **Assignació de canals (`TTY`)**
-  - `zbus` manté una taula de `TTY` (fins a `ZBUS_MAX_TTY=10`, de `TTY0` a `TTY9`) associats a una task propietària.
-  - Cada `TTY` es pot `attach`/`detach`, i les operacions de lectura/escriptura només són vàlides per la task propietària.
-- **Camí TX (MSX -> host)**
-  - `zbus_write_tty()` encola trames de fins a `64` bytes en una cua per `TTY` (`ZBUS_TX_QUEUE_SIZE=8`).
-  - Si la cua és plena, la trama es descarta i s'incrementa el comptador `tx_drop`.
-  - `zbus_tick()` envia dades en *round-robin* entre `TTY` actius, amb límit de `ZBUS_TX_CHUNK=2` trames per tick, usant `zlink_send_data()`.
-- **Camí RX (host -> MSX)**
-  - A cada `tick`, `zbus` fa `poll` de `zlink` (`zlink_poll_once()`), amb límit `ZBUS_RX_CHUNK=1` trama per tick.
-  - Si la trama és d'un `TTY` d'usuari vàlid i amb `rx_polling_enabled`, el payload s'afegeix al buffer circular RX (`ZBUS_BUFFER_SIZE=96`).
-  - Si el buffer RX és ple, la resta de bytes es descarten i s'incrementa `rx_overflow`.
-  - Les tasques recuperen bytes amb `zbus_read_tty()` (o `zbus_read()` en mode legacy).
-- **Canal de control del kernel (`tty=15`)**
-  - `TTY15` està reservat i no es mapeja a cap task d'usuari.
-  - Les trames rebudes a `tty=15` activen comandes de control (`GET_STATS`, `GET_TASK_INFO`, `GET_TASK_LIST`, `GET_STACK_WM`) i `zbus` respon pel mateix canal amb `RSP_*`.
-- **Integritat i estadístiques**
-  - `zbus` agrega comptadors propis (`tx_drop`, `rx_overflow`, `attach_fail`) i els de diagnòstic de `zlink` (`rx_crc_err`, `rx_dup`, etc.).
-  - Les seccions crítiques s'executen amb `CPU_DI()/CPU_EI()` per protegir taules i cues compartides.
+- **Channel assignment (`TTY`)**
+  - `zbus` keeps a `TTY` table (up to `ZBUS_MAX_TTY=10`, from `TTY0` to `TTY9`) associated with an owner task.
+  - Each `TTY` can be `attach`ed/`detach`ed, and read/write operations are valid only for the owner task.
+- **TX path (MSX -> host)**
+  - `zbus_write_tty()` queues frames up to `64` bytes in one queue per `TTY` (`ZBUS_TX_QUEUE_SIZE=8`).
+  - If the queue is full, the frame is dropped and `tx_drop` is incremented.
+  - `zbus_tick()` sends data in round-robin across active `TTY`s, capped at `ZBUS_TX_CHUNK=2` frames per tick, using `zlink_send_data()`.
+- **RX path (host -> MSX)**
+  - On each tick, `zbus` polls `zlink` (`zlink_poll_once()`), capped at `ZBUS_RX_CHUNK=1` frame per tick.
+  - If the frame targets a valid user `TTY` and `rx_polling_enabled` is true, payload is appended to the RX circular buffer (`ZBUS_BUFFER_SIZE=96`).
+  - If the RX buffer is full, remaining bytes are dropped and `rx_overflow` is incremented.
+  - Tasks retrieve bytes with `zbus_read_tty()` (or `zbus_read()` in legacy mode).
+- **Kernel control channel (`tty=15`)**
+  - `TTY15` is reserved and not mapped to any user task.
+  - Frames received on `tty=15` trigger control commands (`GET_STATS`, `GET_TASK_INFO`, `GET_TASK_LIST`, `GET_STACK_WM`) and `zbus` responds on the same channel with `RSP_*`.
+- **Integrity and statistics**
+  - `zbus` aggregates its own counters (`tx_drop`, `rx_overflow`, `attach_fail`) and `zlink` diagnostics (`rx_crc_err`, `rx_dup`, etc.).
+  - Critical sections run with `CPU_DI()/CPU_EI()` to protect shared tables and queues.
 
-La `tty=15` està reservada pel _kernel_. Les consultes via `tty=15` són el canal de control del _kernel_ (control-plane). A diferència dels `TTY` d'usuari, aquestes trames no s'entreguen a cap una tasca d'aplicació: el _kernel_ les interpreta com a comandes de diagnòstic/inspecció i retorna una resposta estructurada (`RSP_*`) pel mateix `tty=15`. Això permet monitoratge i automatització (stats, estat de tasks, stack watermark) sense barrejar aquest tràfic amb la shell o les dades normals dels processos.
+`tty=15` is reserved for the kernel. Queries through `tty=15` form the kernel control plane. Unlike user `TTY`s, these frames are not delivered to application tasks: the kernel interprets them as diagnostic/inspection commands and returns a structured response (`RSP_*`) on the same `tty=15`. This enables monitoring and automation (stats, task state, stack watermark) without mixing this traffic with shell or normal process data.
 
-Les següents seccions donen detalls dels missatges de control del _kernel_ intercanviats via `tty=15` sobre `zbus`/`zlink`.
+The following sections detail kernel control messages exchanged via `tty=15` over `zbus`/`zlink`.
 
-## Estadístiques
-Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar pèrdues, errors i saturació.
+## Statistics
+Lets you obtain transport health counters (`zbus`/`zlink`) to detect loss, errors, and saturation.
 
 - Request host->MSX (`DATA`, `tty=15`): payload `01` (`GET_STATS`)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `81` (`RSP_STATS`)
   - `status` (`00=OK`, `01=BAD_CMD`, `02=BAD_LEN`)
-  - 8 comptadors `uint16 little-endian` (si `status=00`):
+  - 8 `uint16 little-endian` counters (if `status=00`):
     - `tx_drop`
     - `rx_overflow`
     - `attach_fail`
@@ -165,21 +165,21 @@ Permet obtenir comptadors de salut del transport (`zbus`/`zlink`) per detectar p
     - `zlink_rx_dup`
     - `zlink_rx_type_err`
     - `zlink_rx_len_err`
-- A `openmsx/zlink.tcl`, usa `zlink_dev::get_stats` (o alias `zlink::get_stats`) per enviar la request i veure la resposta decodificada.
-- Per output JSON orientat a scripts, usa `zlink_dev::get_stats_json` (o `zlink::get_stats_json`).
-  - Format JSON:
+- In `openmsx/zlink.tcl`, use `zlink_dev::get_stats` (or alias `zlink::get_stats`) to send the request and view the decoded response.
+- For script-oriented JSON output, use `zlink_dev::get_stats_json` (or `zlink::get_stats_json`).
+  - JSON format:
     - `type` = `"kernel_stats"`
     - `status`
     - `tx_drop`, `rx_overflow`, `attach_fail`
     - `zlink_rx_frames_ok`, `zlink_rx_crc_err`, `zlink_rx_dup`, `zlink_rx_type_err`, `zlink_rx_len_err`
-    - en error: `len`, `payload_hex`
+    - on error: `len`, `payload_hex`
 
-## Dades de tasca
-Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer estat, `tty`, `SP` i nom.
+## Task Data
+Lets you inspect a specific task (current or by `task_id`) to know state, `tty`, `SP`, and name.
 
 - Request host->MSX (`DATA`, `tty=15`):
-  - payload `02` (`GET_TASK_INFO`, task actual), o
-  - payload `02 <task_id>` (`GET_TASK_INFO` d'un task concret)
+  - payload `02` (`GET_TASK_INFO`, current task), or
+  - payload `02 <task_id>` (`GET_TASK_INFO` for a specific task)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `82` (`RSP_TASK_INFO`)
   - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
@@ -189,17 +189,17 @@ Permet inspeccionar una task concreta (actual o per `task_id`) per conèixer est
   - `task_sp_lo task_sp_hi` (`uint16 little-endian`)
   - `task_name_len`
   - `task_name[8]`
-- A `openmsx/zlink.tcl`, usa:
+- In `openmsx/zlink.tcl`, use:
   - `zlink_dev::get_task_info` / `zlink::get_task_info`
   - `zlink_dev::get_task_info_json` / `zlink::get_task_info_json`
-  - Format JSON:
+  - JSON format:
     - `type` = `"kernel_task_info"`
     - `status`
-    - `id`, `state`, `sp` (hexadecimal, p.ex. `"0x1234"`), `name_len`, `name`
-    - en error: `len`, `payload_hex`
+    - `id`, `state`, `sp` (hexadecimal, e.g. `"0x1234"`), `name_len`, `name`
+    - on error: `len`, `payload_hex`
 
-## Llista de tasques
-Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i nom.
+## Task List
+Lets you obtain a summary of all active tasks with identifier, `tty`, and name.
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `03` (`GET_TASK_LIST`)
@@ -207,28 +207,28 @@ Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i no
   - `83` (`RSP_TASK_LIST`)
   - `status` (`00=OK`, `02=BAD_LEN`)
   - `count`
-  - `count` entrades de 11 bytes:
+  - `count` entries of 11 bytes:
     - `task_id`
     - `task_tty`
     - `task_name_len`
     - `task_name[8]`
-- A `openmsx/zlink.tcl`, usa:
+- In `openmsx/zlink.tcl`, use:
   - `zlink_dev::get_task_list` / `zlink::get_task_list`
   - `zlink_dev::get_task_list_json` / `zlink::get_task_list_json`
-  - Format JSON:
+  - JSON format:
     - `type` = `"kernel_task_list"`
     - `status`
     - `count`
-    - `tasks`: llista d'objectes amb `id`, `tty`, `name_len`, `name`
-    - en error: `len`, `payload_hex`
+    - `tasks`: list of objects with `id`, `tty`, `name_len`, `name`
+    - on error: `len`, `payload_hex`
 
-## Watermark de stack
+## Stack Watermark
 
-Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `stack overflow`.
+Lets you measure stack usage (current and peak) to size stacks and prevent stack overflow.
 
 - Request host->MSX (`DATA`, `tty=15`):
-  - payload `07` (`GET_STACK_WM`, task actual), o
-  - payload `07 <task_id>` (`GET_STACK_WM` d'un task concret)
+  - payload `07` (`GET_STACK_WM`, current task), or
+  - payload `07 <task_id>` (`GET_STACK_WM` for a specific task)
 - Response MSX->host (`DATA`, `tty=15`): payload
   - `87` (`RSP_STACK_WM`)
   - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
@@ -237,91 +237,91 @@ Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `sta
   - `stack_size_lo stack_size_hi` (`uint16 little-endian`)
   - `peak_used_lo peak_used_hi` (`uint16 little-endian`, watermark)
   - `current_used_lo current_used_hi` (`uint16 little-endian`)
-- A `openmsx/zlink.tcl`, usa:
+- In `openmsx/zlink.tcl`, use:
   - `zlink_dev::get_stack_wm` / `zlink::get_stack_wm`
   - `zlink_dev::get_stack_wm <task_id>` / `zlink::get_stack_wm <task_id>`
 
 # IPC
-L'objectiu de l'IPC és oferir un mecanisme mínim, previsible i de baix cost per coordinar tasques i intercanviar dades dins del sistema, així com evitar esperes actives i mantenint el sistema reactiu sota càrrega.
+The goal of IPC is to provide a minimal, predictable, low-cost mechanism for coordinating tasks and exchanging data within the system, while avoiding busy waiting and keeping the system responsive under load.
 
-El mòdul IPC es construeix amb dues primitives:
+The IPC module is built around two primitives:
 
-- `ipc_semaphore_t`: sincronització bloquejant entre tasks (`wait/signal`).
-  - Serveix per protegir recursos compartits o esperar esdeveniments.
-  - Si el recurs no està disponible, la task no gira en bucle: queda bloquejada fins que algú faci `signal`.
-- `ipc_queue_t`: FIFO de mida fixa per a missatgeria entre productor i consumidor.
-  - Internament usa dos semàfors:
-    - `items`: nombre d'elements disponibles per rebre.
-    - `slots`: espai lliure disponible per enviar.
-  - Això imposa control de flux: no es pot enviar si la cua és plena ni rebre si és buida.
+- `ipc_semaphore_t`: blocking synchronization between tasks (`wait/signal`).
+  - Used to protect shared resources or wait for events.
+  - If the resource is unavailable, the task does not spin in a loop: it blocks until another task performs `signal`.
+- `ipc_queue_t`: fixed-size FIFO for producer/consumer messaging.
+  - Internally uses two semaphores:
+    - `items`: number of available elements to receive.
+    - `slots`: free space available to send.
+  - This enforces flow control: you cannot send when full, and cannot receive when empty.
 
-Funcionament operatiu (model productor/consumidor):
+Operational behavior (producer/consumer model):
 
-1. `send`: el productor espera `slots`, escriu a la cua i incrementa `items`.
-2. `recv`: el consumidor espera `items`, llegeix de la cua i incrementa `slots`.
-3. Quan no es pot progressar (cua plena o buida), la task queda en espera del nucli i es reprèn quan toca.
+1. `send`: the producer waits on `slots`, writes to the queue, and increments `items`.
+2. `recv`: the consumer waits on `items`, reads from the queue, and increments `slots`.
+3. When progress is not possible (full or empty queue), the task waits in the kernel and resumes when appropriate.
 
-Integració amb el scheduler:
+Integration with the scheduler:
 
-- Els bloquejos d'IPC es reflecteixen a l'estat de task (`wait_sem`, `wait_q_send`, `wait_q_recv`).
-- Això permet que el planificador executi altres tasks preparades mentre una task espera IPC.
-- El resultat és menor latència global i millor aprofitament de CPU que amb polling.
+- IPC blocking states are reflected in task state (`wait_sem`, `wait_q_send`, `wait_q_recv`).
+- This allows the scheduler to run other ready tasks while one task waits on IPC.
+- The result is lower global latency and better CPU utilization than polling.
 
-En resum, aquest IPC és la base de missatgeria interna del sistema: prou simple per ser robusta en Z80 i prou expressiva per construir canals entre tasks sense acoblament fort.
+In summary, this IPC is the foundation of internal system messaging: simple enough to be robust on Z80, and expressive enough to build channels between tasks without tight coupling.
 
 
-# Compilació
-El projecte utilitza SDCC (`sdcc`) i l'assembler `sdasz80`. SDCC és una suite de compilador de C estàndard (ANSI C89, ISO C99, ISO C11, ISO C23), retargetable i optimitzadora, orientada als microprocessadors Intel basats en MCS51 (8031, 8032, 8051, 8052, etc.), variants DS80C390 de Maxim (abans Dallas), microcontroladors Freescale basats en HC08 (abans Motorola) (hc08, s08), MCUs Zilog basats en Z80 (Z80, Z80N, Z180, SM83, Rabbit 2000, 2000A, 3000A, SM83, TLCS-90, eZ80, R800), Padauk (pdk14, pdk15), STM8 de STMicroelectronics, MOS 6502 i WDC 65C02.
+# Build
+The project uses SDCC (`sdcc`) and the `sdasz80` assembler. SDCC is a standard C compiler suite (ANSI C89, ISO C99, ISO C11, ISO C23), retargetable and optimizing, focused on Intel MCS51-based microprocessors (8031, 8032, 8051, 8052, etc.), Maxim DS80C390 variants (formerly Dallas), Freescale HC08-based microcontrollers (formerly Motorola) (hc08, s08), Zilog Z80-based MCUs (Z80, Z80N, Z180, SM83, Rabbit 2000, 2000A, 3000A, SM83, TLCS-90, eZ80, R800), Padauk (pdk14, pdk15), STMicroelectronics STM8, MOS 6502, and WDC 65C02.
 
-Els _assemblers_ ASxxxx són una sèrie d’_assemblers_ de microprocessadors escrits en C. Aquesta col·lecció conté _assemblers_ creuats per a les sèries 1802, S2650, SC/MP, 4040(4004), MPS430, 6100, 61860, 6500, 6800(6802/6808), 6801(6803/HD6303), 6804, 6805, 68HC(S)08, 6809, 68HC11, 68HC(S)12, 68HC16, 68CF 68K, 740, 78K/0, 78K/0S, 8008, 8008S, 8048(8041/8022/8021), 8051, 8085(8080), AT89LP, 8X300(8X305), COP4, COP8, DS8XCXXX, AVR, EZ8, EZ80, F2MC8L/FX, F8/3870, GameBoy(Z80), H8/3xx, Cypress PSoC(M8C), PDP11, PIC, Rabbit 2000/3000, RS08, ST6, ST7, ST8, ST9, SX, TLCS90, Z8, Z80(HD64180, ZXN, 8080, 8085) i Z280.
+ASxxxx assemblers are a family of microprocessor assemblers written in C. This collection contains cross-assemblers for series 1802, S2650, SC/MP, 4040(4004), MPS430, 6100, 61860, 6500, 6800(6802/6808), 6801(6803/HD6303), 6804, 6805, 68HC(S)08, 6809, 68HC11, 68HC(S)12, 68HC16, 68CF 68K, 740, 78K/0, 78K/0S, 8008, 8008S, 8048(8041/8022/8021), 8051, 8085(8080), AT89LP, 8X300(8X305), COP4, COP8, DS8XCXXX, AVR, EZ8, EZ80, F2MC8L/FX, F8/3870, GameBoy(Z80), H8/3xx, Cypress PSoC(M8C), PDP11, PIC, Rabbit 2000/3000, RS08, ST6, ST7, ST8, ST9, SX, TLCS90, Z8, Z80(HD64180, ZXN, 8080, 8085), and Z280.
 
-Podem trobar els manifests del maquinari o plataforma de destí (_targets_) a `targets/*.mk`. Aquests arxius defineixen tant el layout de compilació com els paràmetres de _boot_. Per compilar el target per defecte (`ztick`):
+You can find hardware/platform manifests (targets) under `targets/*.mk`. These files define both build layout and boot parameters. To build the default target (`ztick`):
 
 ```bash
 make bootstrap
 ```
-També podem compilar un target en concret:
+You can also build a specific target:
 
 ```bash
 make TARGET=ztick bootstrap
 make TARGET=hb-55p bootstrap
 ```
-Per eliminar el codi objecte creat en fases anteriors:
+To remove object code created in previous steps:
 
 ```bash
 make clean
 ```
-Podem incloure aquests paràmetres per tal de personalitzar la compilació:
+You can include these parameters to customize the build:
 
-* `TARGET`: nom del _target_ referit a `targets/<target>.mk`
-* `IMAGE_LAYOUT`: determina el flux d'imatge ROM. Els seus possibles valors per defecte es defineixen al manifest del target, però es poden sobreescriure:
-  * `flat64`: una única ROM de 64KB.
-  * `flash2x64`: dues ROM de 64KB concatenades en una imatge final de 128KB.
+* `TARGET`: target name referring to `targets/<target>.mk`
+* `IMAGE_LAYOUT`: determines ROM image flow. Default values are defined in the target manifest, but can be overridden:
+  * `flat64`: a single 64 KB ROM.
+  * `flash2x64`: two 64 KB ROMs concatenated into one final 128 KB image.
 
-Exemple amb _override_ explícit:
+Example with explicit override:
 
 ```bash
 make TARGET=hb-55p IMAGE_LAYOUT=flash2x64 bootstrap
 ```
 
-Existeixen dos formats o _layouts_ d'imatge. L'elecció entr una o altra dependrà de si fem servir un MSX físic amb la targeta de _bootstrapping_. 
+There are two image formats or layouts. The choice between one and the other depends on whether we use a physical MSX with the bootstrapping board.
 
-El _layout_ `flat64` s'utilitza en targets com `ztick` i es genera en una sola imatge: `bin/<target>/<ROM_IMAGE_NAME>`. Fa `65536` bytes i el codi d'arrencada entra directament per `startup.s`.
+The `flat64` layout is used in targets such as `ztick` and generates a single image: `bin/<target>/<ROM_IMAGE_NAME>`. It is `65536` bytes and boot code enters directly through `startup.s`.
 
-El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`. Es generen dos imatges primaries i una composta a partir de les anteriors:
+The `flash2x64` layout is used for physical targets such as `hb-55p`. It generates two primary images and one composite image built from them:
 
-* `bin/<target>/bootloader.rom` (64KB)
-* `bin/<target>/startup.rom` (64KB)
-* `bin/<target>/<ROM_IMAGE_NAME>` (concatenació, 128KB)
+* `bin/<target>/bootloader.rom` (64 KB)
+* `bin/<target>/startup.rom` (64 KB)
+* `bin/<target>/<ROM_IMAGE_NAME>` (concatenation, 128 KB)
 
-La imatge concatenada ja pot ser programada a SST39SF010A.
+The concatenated image can then be programmed into SST39SF010A.
 
-## Execució amb openMSX
-OpenMSX és un emulador lliure i de codi obert per a ordinadors MSX, MSX2, MSX2+, MSX turboR i maquinari relacionat. El seu lema al repositori és “the MSX emulator that aims for perfection”, és a dir, un emulador orientat a alta fidelitat i precisió.
+# Running with openMSX
+OpenMSX is a free and open-source emulator for MSX, MSX2, MSX2+, MSX turboR, and related hardware. Its repository motto is “the MSX emulator that aims for perfection”, i.e. an emulator focused on high fidelity and accuracy.
 
-Per a les proves completes de `zlink` (RX/TX), es recomana usar `openMSX 21` _upstream_ atès que aquesta versió inclou l'extensió `ProgrammableDevice`. Es tracta d'un dispositiu MSX virtual programable que pots connectar a una llista de ports d’I/O. Serveix per fer de “pont” entre el Z80 emulat i l’entorn host d’openMSX mitjançant callbacks Tcl. El manual oficial el descriu com un dispositiu virtual connectable “on the fly” a ports I/O d’usuari i útil per crear comunicació bidireccional entre el MSX virtual i el sistema host.
+For complete `zlink` tests (RX/TX), using upstream `openMSX 21` is recommended because this version includes the `ProgrammableDevice` extension. This is a programmable virtual MSX device that you can connect to a list of I/O ports. It acts as a bridge between the emulated Z80 and the openMSX host environment using Tcl callbacks. The official manual describes it as a virtual device connectable “on the fly” to user I/O ports and useful for creating bidirectional communication between the virtual MSX and the host system.
 
-Podem fer servir binaris pre-compilats sense instal·lar [openMSX](https://github.com/openMSX/openMSX/releases) al sistema ni substituir-ne la versió:
+We can use precompiled binaries without installing [openMSX](https://github.com/openMSX/openMSX/releases) on the system or replacing the existing version:
 
 ```bash
 mkdir -p ~/opt
@@ -331,53 +331,68 @@ curl -L -o openmsx-21.0-linux-x86_64-bin.zip \
 unzip -q openmsx-21.0-linux-x86_64-bin.zip -d openmsx-21.0
 ```
 
-Després de compilar, es pot arrencar openMSX amb el script del projecte. Si vols usar la versió del sistema:
+After building, you can start openMSX with the project script. To use the system version:
 
 ```bash
 ./scripts/setup_openmsx.sh ztick
 ./scripts/setup_openmsx.sh hb-55p
 ```
 
-Si volem forçar la versió 21 local:
+If we want to force local version 21:
 
 ```bash
 export OPENMSX_BIN="$HOME/opt/openmsx-21.0/bin/openmsx"
 ./scripts/setup_openmsx.sh --target ztick
 ```
 
-Si vols aturar l'execució al punt d'entrada de shell (`_main_shell`), activa el breakpoint explícitament:
+If you want to pause execution at the shell entry point (`_main_shell`), enable the breakpoint explicitly:
 
 ```bash
 ./scripts/setup_openmsx.sh ztick --bp-main-shell
 ```
 
-Per defecte, `setup_openmsx.sh` llança un petit _self-check_ de diagnòstic (`get_task_list`, `get_stack_wm` i `shell_cmd help`) just després d'instal·lar `zlink`. Si prefereixes arrencada neta:
+By default, `setup_openmsx.sh` runs a small diagnostic self-check (`get_task_list`, `get_stack_wm`, and `shell_cmd help`) right after installing `zlink`. If you prefer a clean start:
 
 ```bash
 ./scripts/setup_openmsx.sh ztick --no-self-check
 ```
 
-## Shell mínima (task `xsh`)
-La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_shell`. En arrencar, mostra el prompt:
+# Shell `xsh`
+The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_shell`. At startup, it shows this prompt:
 
 ```text
 Z-Tick shell
-ztick>
+ztick> 
 ```
 
-Comandes disponibles:
+Implemented functionality (current code state):
 
-* `help`
-* `cfg`
-* `tasks`
-* `start b|c [weight]`
-* `stop b|c`
-* `weight <task_id> <1..3>`
-* `heap [task_id]`
-* `stack [task_id]`
-* `stats`
+* Auto-attaches to the current `tty` via `zbus_tty_get_current()`.
+* Interactive input with echo:
+  * printable ASCII characters (`32..126`)
+  * `Backspace`/`Delete` with visual erase
+  * `CR`/`LF` to execute command
+* Maximum input line length: `55` useful characters (`XSH_LINE_MAX=56`, 1 byte reserved for `\0`).
+* Simple space-separated parser (no quoting/escaping), with at most 3 total tokens (`XSH_ARGV_MAX=3`).
+* If a command does not exist: `unknown command`.
+* If syntax is invalid: shows command `usage` line.
 
-Després del boot només s'inicia la shell (`xsh`). Les tasques `b` i `c` es poden arrencar sota demanda amb:
+Available commands:
+
+* `help`: Shows `commands: help cfg tasks start stop weight heap stack stats`
+* `cfg`: Shows compiled configuration (`max_tasks`, `task_heap`, `zbus` parameters, etc.).
+* `tasks [task_id]`: Without args: counts active tasks and shows `task <id> name=<name>`. With `task_id`: shows details `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
+* `start <task_name> [weight]`: Starts a task from the registry (`task_registry`), currently `b` and `c`. Optional `weight` in range `1..3`.
+* `stop <task_name>`: Requests stop for a running task.
+* `weight <task_id> <1..3>`: Changes scheduling weight of a task.
+* `heap [task_id]`: Shows per-task heap status: `free`, `free_blocks`, `used_blocks`.
+* `stack [task_id]`: Shows stack metrics: `size`, `peak`, `free_peak`, `current`.
+* `stats`: Shows 3 blocks:
+  * `zbus`: `tx_drop`, `rx_overflow`, `attach_fail`
+  * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
+  * `ipc`: `q_used`, `q_cap`
+
+After boot, only shell (`xsh`) starts. Tasks `b` and `c` can be started on demand with:
 
 ```tcl
 zlink_dev::shell_cmd "start b"
@@ -388,7 +403,7 @@ zlink_dev::shell_cmd "stop b"
 zlink_dev::shell_cmd "stop c"
 ```
 
-Des de la consola Tcl d'openMSX, es pot injectar una comanda de shell via:
+From the openMSX Tcl console, you can inject a shell command via:
 
 ```tcl
 zlink_dev::shell_cmd help
@@ -397,13 +412,13 @@ zlink_dev::shell_cmd "stack 0"
 zlink_dev::shell_cmd "help" 0 auto -decode 1
 ```
 
-Equivalent en brut (sense helper):
+Raw equivalent (without helper):
 
 ```tcl
 zlink_dev::queue_text 0 "help\r"
 ```
 
-Per desactivar la decodificació textual:
+To disable text decoding:
 
 ```tcl
 zlink_dev::shell_cmd "help" 0 auto -decode 0
