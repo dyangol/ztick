@@ -5,6 +5,7 @@
 #include "../lib/activity_indicator.h"
 #include "../lib/ipc_demo.h"
 #include "../lib/pipe.h"
+#include "../lib/sprint.h"
 
 #pragma codeseg CODE
 
@@ -35,8 +36,7 @@ void main_c(void)
     activity_indicator_define_label((uint8_t)MAIN_C_LABEL_GLYPH, g_label_c, (uint8_t)MAIN_C_GLYPH_COLOR);
     activity_indicator_define_glyphs((uint8_t)MAIN_C_GLYPH_BASE, (uint8_t)MAIN_C_GLYPH_COLOR);
     activity_indicator_draw_phase((uint8_t)MAIN_C_LABEL_GLYPH, (uint8_t)MAIN_C_GLYPH_BASE, (uint8_t)MAIN_C_COL, (uint8_t)MAIN_C_ROW, phase);
-    pipe_write_cstr(g_hello_c);
-    pipe_newline();
+    sprint_cstr_line(g_hello_c);
 
     while (1) {
         if (rtos_task_stop_requested() != 0u) {
@@ -55,8 +55,7 @@ void main_c(void)
         }
     }
 
-    pipe_write_cstr(g_goodbye_c);
-    pipe_newline();
+    sprint_cstr_line(g_goodbye_c);
     pipe_flush();
     task_exit();
 }

@@ -54,6 +54,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/mem_probe_data.rel \
 	$(BUILD_DIR)/task.rel \
 	$(BUILD_DIR)/pipe.rel \
+	$(BUILD_DIR)/sprint.rel \
 	$(BUILD_DIR)/xsh.rel \
 	$(BUILD_DIR)/xsh_cmd.rel \
 	$(BUILD_DIR)/boot.rel \

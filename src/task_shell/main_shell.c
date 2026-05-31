@@ -4,6 +4,7 @@
 #include "../bootstrap/rtos.h"
 #include "../drivers/zbus.h"
 #include "../lib/pipe.h"
+#include "../lib/sprint.h"
 #include "../lib/xsh.h"
 #include "../lib/xsh_cmd.h"
 
@@ -27,8 +28,7 @@ void main_shell(void)
         counter_a++;
 
         if (rtos_task_stop_requested() != 0u) {
-            pipe_write_cstr(g_goodbye_shell);
-            pipe_newline();
+            sprint_cstr_line(g_goodbye_shell);
             pipe_flush();
             break;
         }
@@ -39,8 +39,7 @@ void main_shell(void)
         xsh_tick(&g_xsh);
 
         if (rtos_task_stop_requested() != 0u) {
-            pipe_write_cstr(g_goodbye_shell);
-            pipe_newline();
+            sprint_cstr_line(g_goodbye_shell);
             pipe_flush();
             break;
         }

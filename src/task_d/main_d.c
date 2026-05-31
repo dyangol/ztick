@@ -6,127 +6,105 @@
 #include "../drivers/io.h"
 #include "../lib/mem_probe.h"
 #include "../lib/pipe.h"
+#include "../lib/sprint.h"
 
 #pragma codeseg CODE
+
+#define TASK_D_PAGE_SIZE 0x4000u
+#define TASK_D_PAGE_LAST_OFFSET 0x3FFFu
+#define TASK_D_CHUNK_MAX 0xFFu
 
 static uint16_t task_d_page_base(uint8_t page)
 {
     return (uint16_t)((uint16_t)page << 14);
 }
 
-static uint8_t task_d_clamp_length(uint16_t offset, uint8_t length)
-{
-    uint16_t max_len = (uint16_t)(0x4000u - offset);
-
-    if (length == 0u) {
-        return 1u;
-    }
-    if (max_len < (uint16_t)length) {
-        return (uint8_t)max_len;
-    }
-    return length;
-}
-
-static uint8_t task_d_hex_digit(uint8_t nibble)
-{
-    nibble &= 0x0Fu;
-    return (nibble < 10u) ? (uint8_t)('0' + nibble) : (uint8_t)('A' + (nibble - 10u));
-}
-
-static void task_d_line_append_hex8(uint8_t *line, uint8_t *io_len, uint8_t value)
-{
-    uint8_t len = *io_len;
-    line[len++] = task_d_hex_digit((uint8_t)(value >> 4));
-    line[len++] = task_d_hex_digit(value);
-    line[len] = 0u;
-    *io_len = len;
-}
-
-static void task_d_line_append_hex16(uint8_t *line, uint8_t *io_len, uint16_t value)
-{
-    uint8_t len = *io_len;
-    line[len++] = task_d_hex_digit((uint8_t)(value >> 12));
-    line[len++] = task_d_hex_digit((uint8_t)(value >> 8));
-    line[len++] = task_d_hex_digit((uint8_t)(value >> 4));
-    line[len++] = task_d_hex_digit((uint8_t)value);
-    line[len] = 0u;
-    *io_len = len;
-}
-
-static void task_d_emit_result(void)
+static void task_d_emit_result(uint16_t range_start, uint16_t range_end)
 {
     uint8_t line[64];
-    uint8_t len = 0u;
-    uint16_t report_addr = (g_slot_probe_fail == 0u) ? g_slot_probe_base_addr : g_slot_probe_fail_addr;
+    sprint_t out;
 
-    line[len++] = (uint8_t)'d';
-    line[len++] = (uint8_t)' ';
-    line[len++] = (g_slot_probe_fail == 0u) ? (uint8_t)'O' : (uint8_t)'F';
-    line[len++] = (g_slot_probe_fail == 0u) ? (uint8_t)'K' : (uint8_t)'A';
-    if (g_slot_probe_fail != 0u) {
-        line[len++] = (uint8_t)'I';
-        line[len++] = (uint8_t)'L';
+    sprint_begin(&out, line, (uint8_t)sizeof(line));
+    (void)sprint_cstr(&out, (const uint8_t *)"d ");
+    (void)sprint_cstr(&out, (g_slot_probe_fail == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"FAIL");
+    (void)sprint_cstr(&out, (const uint8_t *)" range=0x");
+    (void)sprint_hex16(&out, range_start);
+    (void)sprint_cstr(&out, (const uint8_t *)"-0x");
+    (void)sprint_hex16(&out, range_end);
+
+    if (sprint_ok(&out) != 0u) {
+        sprint_emit_line(&out);
+    } else {
+        pipe_write_cstr((const uint8_t *)"d ERR msg-overflow");
+        pipe_newline();
     }
-    line[len++] = (uint8_t)' ';
-    line[len++] = (uint8_t)'a';
-    line[len++] = (uint8_t)'d';
-    line[len++] = (uint8_t)'d';
-    line[len++] = (uint8_t)'r';
-    line[len++] = (uint8_t)'=';
-    line[len++] = (uint8_t)'0';
-    line[len++] = (uint8_t)'x';
-    line[len] = 0u;
-    task_d_line_append_hex16(line, &len, report_addr);
-    line[len++] = (uint8_t)' ';
-    line[len++] = (uint8_t)'r';
-    line[len++] = (uint8_t)'d';
-    line[len++] = (uint8_t)'=';
-    line[len++] = (uint8_t)'0';
-    line[len++] = (uint8_t)'x';
-    line[len] = 0u;
-    task_d_line_append_hex8(line, &len, g_slot_probe_read_value);
+}
 
-    pipe_write_cstr(line);
-    pipe_newline();
+static void task_d_emit_skip_already_mapped(uint16_t range_start, uint16_t range_end)
+{
+    uint8_t line[64];
+    sprint_t out;
+
+    sprint_begin(&out, line, (uint8_t)sizeof(line));
+    (void)sprint_cstr(&out, (const uint8_t *)"d SKIP already-mapped range=0x");
+    (void)sprint_hex16(&out, range_start);
+    (void)sprint_cstr(&out, (const uint8_t *)"-0x");
+    (void)sprint_hex16(&out, range_end);
+
+    if (sprint_ok(&out) != 0u) {
+        sprint_emit_line(&out);
+    } else {
+        pipe_write_cstr((const uint8_t *)"d ERR msg-overflow");
+        pipe_newline();
+    }
 }
 
 void main_d(void)
 {
-    uint8_t wait = 0u;
     uint8_t shift = (uint8_t)(TASK_D_PAGE * 2u);
     uint8_t mask = (uint8_t)(0x03u << shift);
-    uint16_t offset = (uint16_t)(TASK_D_OFFSET & 0x3FFFu);
-    uint8_t length = task_d_clamp_length(offset, (uint8_t)TASK_D_LENGTH);
-    uint16_t base = (uint16_t)(task_d_page_base((uint8_t)TASK_D_PAGE) + offset);
+    uint8_t mapped_slot;
+    uint16_t page_base = task_d_page_base((uint8_t)TASK_D_PAGE);
+    uint16_t range_start = page_base;
+    uint16_t range_end = (uint16_t)(page_base + (uint16_t)TASK_D_PAGE_LAST_OFFSET);
+    uint16_t remaining = (uint16_t)TASK_D_PAGE_SIZE;
+    uint16_t chunk_base = page_base;
 
-    g_slot_probe_base_addr = base;
-    g_slot_probe_length = length;
     g_slot_probe_value = (uint8_t)TASK_D_VALUE;
     g_slot_probe_safe_sp = (uint16_t)TASK_D_SAFE_SP;
     g_slot_probe_exec_addr = (uint16_t)TASK_D_EXEC_ADDR;
     g_slot_probe_psr_port = (uint8_t)PPI_PSR_PORT;
 
-    while (1) {
-        if (rtos_task_stop_requested() != 0u) {
-            break;
+    if (rtos_task_stop_requested() == 0u) {
+        g_slot_probe_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
+        mapped_slot = (uint8_t)((g_slot_probe_psr_old >> shift) & 0x03u);
+        if (mapped_slot == ((uint8_t)TASK_D_SLOT & 0x03u)) {
+            task_d_emit_skip_already_mapped(range_start, range_end);
+            task_exit();
+            return;
         }
 
-        g_slot_probe_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
         g_slot_probe_psr_new = (uint8_t)((g_slot_probe_psr_old & (uint8_t)(~mask)) | (uint8_t)(((uint8_t)TASK_D_SLOT & 0x03u) << shift));
 
-        g_slot_probe_fail = 0u;
-        g_slot_probe_fail_addr = g_slot_probe_base_addr;
-        g_slot_probe_read_value = 0u;
+        while (remaining > 0u) {
+            uint8_t chunk_len = (remaining > (uint16_t)TASK_D_CHUNK_MAX) ? (uint8_t)TASK_D_CHUNK_MAX : (uint8_t)remaining;
 
-        slot_probe_run();
-        task_d_emit_result();
+            g_slot_probe_base_addr = chunk_base;
+            g_slot_probe_length = chunk_len;
+            g_slot_probe_fail = 0u;
+            g_slot_probe_fail_addr = g_slot_probe_base_addr;
+            g_slot_probe_read_value = 0u;
 
-        for (wait = 0u; wait != 0xFFu; ++wait) {
-            CPU_NOP();
-            if (rtos_task_stop_requested() != 0u) {
+            slot_probe_run();
+            if (g_slot_probe_fail != 0u) {
                 break;
             }
+
+            chunk_base = (uint16_t)(chunk_base + (uint16_t)chunk_len);
+            remaining = (uint16_t)(remaining - (uint16_t)chunk_len);
         }
+
+        task_d_emit_result(range_start, range_end);
     }
 
     task_exit();
