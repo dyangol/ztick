@@ -6,6 +6,7 @@
 #include "../lib/ipc_demo.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
+#include "args_b.h"
 
 #pragma codeseg CODE
 
@@ -16,7 +17,7 @@ volatile uint16_t counter_b;
 #define MAIN_B_GLYPH_BASE 40u
 #define MAIN_B_LABEL_GLYPH 46u
 #define MAIN_B_GLYPH_COLOR 0xF4u
-#define MAIN_B_ANIM_MASK 0x003Fu
+#define MAIN_B_ANIM_MASK_DEFAULT 0x003Fu
 
 static const uint8_t g_label_b[8] = {
     0x7Cu, 0x42u, 0x42u, 0x7Cu,
@@ -29,6 +30,7 @@ void main_b(void)
 {
     uint8_t phase = 0u;
     uint16_t tx_seq = 0u;
+    uint16_t anim_mask = task_b_anim_mask_resolve((uint16_t)MAIN_B_ANIM_MASK_DEFAULT);
 
     counter_b = 0u;
     ipc_demo_init_once();
@@ -43,7 +45,7 @@ void main_b(void)
             break;
         }
         counter_b++;
-        if ((counter_b & (uint16_t)MAIN_B_ANIM_MASK) == 0u) {
+        if ((counter_b & anim_mask) == 0u) {
             tx_seq++;
             (void)ipc_demo_send_u16(tx_seq);
             phase = activity_indicator_next_phase(phase);

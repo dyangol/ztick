@@ -31,9 +31,12 @@ OPENMSX_EXTRA_ROM_FILES = bootloader_slot01.rom startup_slot01.rom
 
 # Task D memory-switch probe configuration (target-defined, not user-defined).
 TASK_D_PAGE = 2
-TASK_D_SLOT = 1
-TASK_D_OFFSET = 0x0100
-TASK_D_LENGTH = 64
+TASK_D_SLOT = 0
+TASK_D_ALLOWED_START = 0x0000
+TASK_D_ALLOWED_END = 0x0FFF
+TASK_D_OFFSET = 0x0000
+TASK_D_LENGTH = 4096
 TASK_D_VALUE = 0xA5
+TASK_D_SAFE_MODE = safe
 TASK_D_SAFE_SP = 0xF7F0
 TASK_D_EXEC_ADDR = 0xE000

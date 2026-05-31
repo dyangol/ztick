@@ -12,7 +12,7 @@
 #endif
 
 #ifndef XSH_ARGV_MAX
-#define XSH_ARGV_MAX 3u
+#define XSH_ARGV_MAX 8u
 #endif
 
 #ifndef XSH_INVALID_TTY

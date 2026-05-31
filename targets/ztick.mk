@@ -28,8 +28,11 @@ BOOT_AUTOSTART_STRICT = 1
 # Task D memory-switch probe configuration (target-defined, not user-defined).
 TASK_D_PAGE = 2
 TASK_D_SLOT = 1
+TASK_D_ALLOWED_START = 0x0100
+TASK_D_ALLOWED_END = 0x3EFF
 TASK_D_OFFSET = 0x0100
 TASK_D_LENGTH = 64
 TASK_D_VALUE = 0xA5
+TASK_D_SAFE_MODE = safe
 TASK_D_SAFE_SP = 0xF7F0
 TASK_D_EXEC_ADDR = 0xE000

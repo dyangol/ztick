@@ -429,6 +429,8 @@ uint8_t rtos_task_request_stop(uint8_t task_id)
 void rtos_init(void)
 {
     uint8_t slot;
+    uint8_t spec_idx;
+    uint8_t spec_count;
     uint8_t first_slot = (uint8_t)MAX_TASKS;
 
     /* Keep IRQs masked while boot-time task frames are being prepared. */
@@ -438,6 +440,12 @@ void rtos_init(void)
 
     for (slot = 0u; slot < MAX_TASKS; ++slot) {
         task_reset_runtime_fields(slot);
+    }
+
+    spec_count = task_registry_count();
+    for (spec_idx = 0u; spec_idx < spec_count; ++spec_idx) {
+        const task_spec_t *spec = task_registry_get(spec_idx);
+        task_registry_start_reset(spec);
     }
 
     if (boot_autostart_apply(&first_slot) == 0u) {

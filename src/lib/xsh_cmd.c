@@ -34,7 +34,7 @@ static const uint8_t g_shell_txt_bad_task[] = "undefined task id";
 static const uint8_t g_shell_usage_help[] = "help";
 static const uint8_t g_shell_usage_cfg[] = "cfg";
 static const uint8_t g_shell_usage_tasks[] = "usage: tasks [task_id]";
-static const uint8_t g_shell_usage_start[] = "usage: start <task_name> [weight]";
+static const uint8_t g_shell_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [args...]";
 static const uint8_t g_shell_usage_stop[] = "usage: stop <task_name>";
 static const uint8_t g_shell_usage_weight[] = "usage: weight <task_id> <1..3>";
 static const uint8_t g_shell_usage_heap[] = "usage: heap [task_id]";
@@ -155,7 +155,31 @@ static void shell_emit_start_usage(xsh_t *sh)
 {
     xsh_write_cstr(sh, (const uint8_t *)"usage: start ");
     shell_emit_task_name_choices(sh);
-    xsh_write_cstr(sh, (const uint8_t *)" [weight]");
+    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>] [args...]");
+    xsh_newline(sh);
+}
+
+static void shell_emit_start_usage_for_spec(xsh_t *sh, const task_spec_t *spec)
+{
+    if (sh == (xsh_t *)0) {
+        return;
+    }
+
+    if ((spec == (const task_spec_t *)0) || (spec->name == (const uint8_t *)0)) {
+        shell_emit_start_usage(sh);
+        return;
+    }
+
+    xsh_write_cstr(sh, (const uint8_t *)"usage: start ");
+    xsh_write_cstr(sh, spec->name);
+    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>]");
+    if (spec->start_args_usage != (const uint8_t *)0) {
+        xsh_write_cstr(sh, (const uint8_t *)" [");
+        xsh_write_cstr(sh, spec->start_args_usage);
+        xsh_write_cstr(sh, (const uint8_t *)"]");
+    } else {
+        xsh_write_cstr(sh, (const uint8_t *)" [args...]");
+    }
     xsh_newline(sh);
 }
 
@@ -246,6 +270,19 @@ static uint8_t shell_parse_weight(const uint8_t *text, uint8_t *out_weight)
     return 1u;
 }
 
+static uint8_t shell_parse_weight_assignment(const uint8_t *text, uint8_t *out_weight)
+{
+    if ((text == (const uint8_t *)0) || (out_weight == (uint8_t *)0)) {
+        return 0u;
+    }
+
+    if ((text[0] != (uint8_t)'w') || (text[1] != (uint8_t)'=')) {
+        return 0u;
+    }
+
+    return shell_parse_weight(&text[2], out_weight);
+}
+
 static uint8_t shell_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t weight)
 {
     uint8_t slot;
@@ -282,8 +319,13 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     const task_spec_t *spec;
     uint8_t weight;
+    uint8_t idx;
+    uint8_t has_weight = 0u;
+    uint8_t task_argv[XSH_ARGV_MAX];
+    uint8_t task_argc = 0u;
+    uint8_t running_slot;
 
-    if ((argc != 2u) && (argc != 3u)) {
+    if ((argc < 2u) || (argc > XSH_ARGV_MAX)) {
         shell_emit_start_usage(sh);
         return 0u;
     }
@@ -295,12 +337,60 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     }
 
     weight = spec->default_weight;
-    if ((argc == 3u) && (shell_parse_weight(argv[2], &weight) == 0u)) {
-        shell_emit_start_usage(sh);
+
+    for (idx = 2u; idx < argc; ++idx) {
+        uint8_t parsed_weight;
+
+        if ((idx == 2u) && (shell_parse_weight(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
+            weight = parsed_weight;
+            has_weight = 1u;
+            continue;
+        }
+
+        if ((shell_parse_weight_assignment(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
+            weight = parsed_weight;
+            has_weight = 1u;
+            continue;
+        }
+
+        if (task_argc < (uint8_t)ARRAY_LEN(task_argv)) {
+            task_argv[task_argc] = idx;
+            task_argc++;
+        } else {
+            shell_emit_start_usage_for_spec(sh, spec);
+            return 0u;
+        }
+    }
+
+    if (shell_find_task_by_name(spec->name, &running_slot) != 0u) {
+        return shell_start_task_spec(sh, spec, weight);
+    }
+
+    if (task_argc != 0u) {
+        uint8_t arg_idx;
+        uint8_t *task_argv_ptrs[XSH_ARGV_MAX];
+
+        for (arg_idx = 0u; arg_idx < task_argc; ++arg_idx) {
+            task_argv_ptrs[arg_idx] = argv[task_argv[arg_idx]];
+        }
+
+        if (task_registry_start_configure(spec, task_argc, task_argv_ptrs) == 0u) {
+            task_registry_start_reset(spec);
+            shell_emit_start_usage_for_spec(sh, spec);
+            return 0u;
+        }
+    } else if (task_registry_start_configure(spec, 0u, (uint8_t **)0) == 0u) {
+        task_registry_start_reset(spec);
+        shell_emit_start_usage_for_spec(sh, spec);
         return 0u;
     }
 
-    return shell_start_task_spec(sh, spec, weight);
+    if (shell_start_task_spec(sh, spec, weight) == 0u) {
+        task_registry_start_reset(spec);
+        return 0u;
+    }
+
+    return 1u;
 }
 
 static uint8_t shell_stop_task_spec(xsh_t *sh, const task_spec_t *spec)
@@ -847,7 +937,7 @@ static const xsh_cmd_t g_xsh_cmds[] = {
     {g_shell_cmd_help, g_shell_usage_help, 0u, 0u, cmd_help},
     {g_shell_cmd_cfg, g_shell_usage_cfg, 0u, 0u, cmd_cfg},
     {g_shell_cmd_tasks, g_shell_usage_tasks, 0u, 1u, cmd_tasks},
-    {g_shell_cmd_start, g_shell_usage_start, 1u, 2u, cmd_start},
+    {g_shell_cmd_start, g_shell_usage_start, 1u, (uint8_t)(XSH_ARGV_MAX - 1u), cmd_start},
     {g_shell_cmd_stop, g_shell_usage_stop, 1u, 1u, cmd_stop},
     {g_shell_cmd_weight, g_shell_usage_weight, 2u, 2u, cmd_weight},
     {g_shell_cmd_heap, g_shell_usage_heap, 0u, 1u, cmd_heap},

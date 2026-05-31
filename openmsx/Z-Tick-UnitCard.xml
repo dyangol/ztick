@@ -51,6 +51,9 @@
         </rom>
         <mem base="0x0000" size="0x8000"/>
       </ROM>
+      <RAM id="Z-Tick slot0 RAM page2">
+        <mem base="0x8000" size="0x4000"/>
+      </RAM>
     </primary>
 
     <primary slot="1">

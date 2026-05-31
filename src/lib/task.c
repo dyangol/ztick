@@ -2,6 +2,9 @@
 
 #include "../common/common.h"
 #include "../bootstrap/rtos.h"
+#include "../task_b/args_b.h"
+#include "../task_c/args_c.h"
+#include "../task_d/args_d.h"
 #include "task.h"
 
 #pragma codeseg CODE
@@ -15,13 +18,16 @@ static const uint8_t g_task_name_xsh[] = "xsh";
 static const uint8_t g_task_name_b[] = "b";
 static const uint8_t g_task_name_c[] = "c";
 static const uint8_t g_task_name_d[] = "d";
+static const uint8_t g_task_b_start_args_usage[] = "fast|normal|slow";
+static const uint8_t g_task_c_start_args_usage[] = "even|odd|all";
+static const uint8_t g_task_d_start_args_usage[] = "safe|unsafe";
 #define TASK_DEFAULT_WEIGHT_XSH 2u
 
 static const task_spec_t g_task_specs[] = {
-    {g_task_name_xsh, main_shell, TASK_DEFAULT_WEIGHT_XSH},
-    {g_task_name_b, main_b, TASK_WEIGHT_MIN},
-    {g_task_name_c, main_c, TASK_WEIGHT_MIN},
-    {g_task_name_d, main_d, TASK_WEIGHT_MIN}
+    {g_task_name_xsh, main_shell, TASK_DEFAULT_WEIGHT_XSH, (const uint8_t *)0, (task_start_args_configure_t)0, (task_start_args_reset_t)0},
+    {g_task_name_b, main_b, TASK_WEIGHT_MIN, g_task_b_start_args_usage, task_b_start_configure, task_b_start_reset},
+    {g_task_name_c, main_c, TASK_WEIGHT_MIN, g_task_c_start_args_usage, task_c_start_configure, task_c_start_reset},
+    {g_task_name_d, main_d, TASK_WEIGHT_MIN, g_task_d_start_args_usage, task_d_start_configure, task_d_start_reset}
 };
 
 static uint8_t task_registry_size(void)
@@ -73,4 +79,26 @@ const task_spec_t *task_registry_get(uint8_t index)
 uint8_t task_registry_count(void)
 {
     return task_registry_size();
+}
+
+uint8_t task_registry_start_configure(const task_spec_t *spec, uint8_t argc, uint8_t *argv[])
+{
+    if (spec == (const task_spec_t *)0) {
+        return 0u;
+    }
+
+    if (spec->start_args_configure == (task_start_args_configure_t)0) {
+        return (argc == 0u) ? 1u : 0u;
+    }
+
+    return spec->start_args_configure(argc, argv);
+}
+
+void task_registry_start_reset(const task_spec_t *spec)
+{
+    if ((spec == (const task_spec_t *)0) || (spec->start_args_reset == (task_start_args_reset_t)0)) {
+        return;
+    }
+
+    spec->start_args_reset();
 }

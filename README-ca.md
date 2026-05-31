@@ -222,9 +222,8 @@ Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i no
     - `tasks`: llista d'objectes amb `id`, `tty`, `name_len`, `name`
     - en error: `len`, `payload_hex`
 
-## Watermark de stack
-
-Permet mesurar ús de pila (actual i pic) per dimensionar stacks i prevenir `stack overflow`.
+## Watermark de stacks
+Permet mesurar ús de pila (actual i de pic) per dimensionar les piles de memòria i prevenir `stack overflow`.
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `07` (`GET_STACK_WM`, task actual), o

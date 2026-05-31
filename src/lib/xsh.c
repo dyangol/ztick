@@ -11,9 +11,11 @@
 #define XSH_CR 0x0Du
 #define XSH_LF 0x0Au
 #define XSH_WRITE_RETRY_MAX 64u
+#define XSH_ARGC_OVERFLOW 0xFFu
 
 static const uint8_t g_xsh_default_prompt[] = "xsh> ";
 static const uint8_t g_xsh_default_unknown[] = "unknown command";
+static const uint8_t g_xsh_too_many_args[] = "too many args";
 static const uint8_t g_xsh_crlf[] = "\r\n";
 static const uint8_t g_xsh_bs_seq[3] = {XSH_BACKSPACE, (uint8_t)' ', XSH_BACKSPACE};
 
@@ -336,7 +338,7 @@ static uint8_t xsh_split_argv(uint8_t *line, uint8_t line_len, uint8_t *argv[XSH
         }
 
         if (argc >= XSH_ARGV_MAX) {
-            return argc;
+            return (uint8_t)XSH_ARGC_OVERFLOW;
         }
 
         argv[argc] = &line[i];
@@ -387,6 +389,11 @@ static void xsh_execute_line(xsh_t *sh)
     sh->line[sh->line_len] = 0u;
     argc = xsh_split_argv(sh->line, sh->line_len, argv);
     if (argc == 0u) {
+        return;
+    }
+    if (argc == (uint8_t)XSH_ARGC_OVERFLOW) {
+        xsh_write_cstr(sh, g_xsh_too_many_args);
+        xsh_newline(sh);
         return;
     }
 

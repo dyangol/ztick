@@ -51,8 +51,12 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/zlink.rel \
 	$(BUILD_DIR)/activity_indicator.rel \
 	$(BUILD_DIR)/ipc_demo.rel \
-	$(BUILD_DIR)/mem_probe_data.rel \
+	$(BUILD_DIR)/mem_probe.rel \
 	$(BUILD_DIR)/task.rel \
+	$(BUILD_DIR)/args_b.rel \
+	$(BUILD_DIR)/args_c.rel \
+	$(BUILD_DIR)/args_d.rel \
+	$(BUILD_DIR)/args.rel \
 	$(BUILD_DIR)/pipe.rel \
 	$(BUILD_DIR)/sprint.rel \
 	$(BUILD_DIR)/xsh.rel \
@@ -61,7 +65,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/rtos.rel \
 	$(BUILD_DIR)/vdp_c.rel \
 	$(BUILD_DIR)/io.rel \
-	$(BUILD_DIR)/mem_probe.rel \
+	$(BUILD_DIR)/mem_probe_asm.rel \
 	$(BUILD_DIR)/main_shell.rel \
 	$(BUILD_DIR)/main_b.rel \
 	$(BUILD_DIR)/main_c.rel \
@@ -118,14 +122,23 @@ $(BUILD_DIR)/target_autostart.h: setup
 $(BUILD_DIR)/target_task_d.h: setup
 	@task_d_page="$(strip $(TASK_D_PAGE))"; \
 	task_d_slot="$(strip $(TASK_D_SLOT))"; \
+	task_d_allowed_start="$(strip $(TASK_D_ALLOWED_START))"; \
+	task_d_allowed_end="$(strip $(TASK_D_ALLOWED_END))"; \
 	task_d_offset="$(strip $(TASK_D_OFFSET))"; \
 	task_d_length="$(strip $(TASK_D_LENGTH))"; \
 	task_d_value="$(strip $(TASK_D_VALUE))"; \
+	task_d_safe_mode_raw="$(strip $(TASK_D_SAFE_MODE))"; \
 	task_d_safe_sp="$(strip $(TASK_D_SAFE_SP))"; \
 	task_d_exec_addr="$(strip $(TASK_D_EXEC_ADDR))"; \
 	ppi_psr_port="$(strip $(PPI_PSR_PORT))"; \
-	if [ -z "$$task_d_page" ] || [ -z "$$task_d_slot" ] || [ -z "$$task_d_offset" ] || \
-	   [ -z "$$task_d_length" ] || [ -z "$$task_d_value" ] || [ -z "$$task_d_safe_sp" ] || \
+	case "$$task_d_safe_mode_raw" in \
+		safe) task_d_safe_mode=1 ;; \
+		unsafe) task_d_safe_mode=0 ;; \
+		*) echo "TASK_D_SAFE_MODE must be 'safe' or 'unsafe' in $(TARGET_MANIFEST)" >&2; exit 1 ;; \
+	esac; \
+	if [ -z "$$task_d_page" ] || [ -z "$$task_d_slot" ] || [ -z "$$task_d_allowed_start" ] || \
+	   [ -z "$$task_d_allowed_end" ] || [ -z "$$task_d_offset" ] || [ -z "$$task_d_length" ] || \
+	   [ -z "$$task_d_value" ] || [ -z "$$task_d_safe_mode_raw" ] || [ -z "$$task_d_safe_sp" ] || \
 	   [ -z "$$task_d_exec_addr" ] || [ -z "$$ppi_psr_port" ]; then \
 		echo "Missing TASK_D_* or PPI_PSR_PORT in $(TARGET_MANIFEST)" >&2; \
 		exit 1; \
@@ -134,9 +147,12 @@ $(BUILD_DIR)/target_task_d.h: setup
 	printf "#ifndef TARGET_TASK_D_H\n#define TARGET_TASK_D_H\n\n" >> $@; \
 	printf "#define TASK_D_PAGE %su\n" "$$task_d_page" >> $@; \
 	printf "#define TASK_D_SLOT %su\n" "$$task_d_slot" >> $@; \
+	printf "#define TASK_D_ALLOWED_START %s\n" "$$task_d_allowed_start" >> $@; \
+	printf "#define TASK_D_ALLOWED_END %s\n" "$$task_d_allowed_end" >> $@; \
 	printf "#define TASK_D_OFFSET %s\n" "$$task_d_offset" >> $@; \
 	printf "#define TASK_D_LENGTH %su\n" "$$task_d_length" >> $@; \
 	printf "#define TASK_D_VALUE %s\n" "$$task_d_value" >> $@; \
+	printf "#define TASK_D_SAFE_MODE %su\n" "$$task_d_safe_mode" >> $@; \
 	printf "#define TASK_D_SAFE_SP %s\n" "$$task_d_safe_sp" >> $@; \
 	printf "#define TASK_D_EXEC_ADDR %s\n" "$$task_d_exec_addr" >> $@; \
 	printf "#define PPI_PSR_PORT %s\n\n" "$$ppi_psr_port" >> $@; \
@@ -151,7 +167,7 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
-	$(AS) -o $(BUILD_DIR)/mem_probe.rel $(SRC_DIR)/lib/mem_probe.s
+	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
 	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/task_d/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
@@ -183,7 +199,7 @@ else
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
-	$(AS) -o $(BUILD_DIR)/mem_probe.rel $(SRC_DIR)/lib/mem_probe.s
+	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
 	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/task_d/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
