@@ -66,7 +66,7 @@ El _Memory Switching_ estableix doncs totes les pàgines de l'espai d'adreces al
 | 2 | `0x8000-0xBFFF` | ROM Personal Data Bank |
 | 3 | `0xC000-0xFFFF` | RAM |
 
-És a dir, el HB-55P tenia 16KB de RAM nadiua. El MSX HB-75P en canvi, tenia aquesta configuració de _slot 0_:
+És a dir, el HB-55P té 16KB de RAM nadiua instal·lada a _slot 0_. El MSX HB-75P en canvi, tenia aquesta configuració de _slot 0_:
 
 | Pàgina | Interval d'adreces | Recurs |
 |:---|:---|:---|
@@ -284,6 +284,7 @@ També podem compilar un target en concret:
 
 ```bash
 make TARGET=ztick bootstrap
+make TARGET=ztick-unitcard bootstrap
 make TARGET=hb-55p bootstrap
 ```
 Per eliminar el codi objecte creat en fases anteriors:
@@ -335,8 +336,15 @@ Després de compilar, es pot arrencar openMSX amb el script del projecte. Si vol
 
 ```bash
 ./scripts/setup_openmsx.sh ztick
+./scripts/setup_openmsx.sh ztick-unitcard
 ./scripts/setup_openmsx.sh hb-55p
 ```
+
+`ztick-unitcard` simula un flux d'arrencada en dues etapes per una targeta ROM+RAM al _primary slot 1_:
+
+* el bootloader s'executa des del slot 0 pàgines 0-1
+* l'_startup_ s'executa des del slot 1 pàgines 0-1
+* la RAM de tasques/dades és al slot 1 pàgines 2-3
 
 Si volem forçar la versió 21 local:
 
@@ -392,7 +400,7 @@ Comandes disponibles:
     * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
     * `ipc`: `q_used`, `q_cap`
 
-Després del boot només s'inicia la shell (`xsh`). Les tasques `b` i `c` es poden arrencar sota demanda amb:
+Després del boot, les tasks es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1` als targets inclosos). La task `c` es pot arrencar sota demanda amb:
 
 ```tcl
 zlink_dev::shell_cmd "start b"

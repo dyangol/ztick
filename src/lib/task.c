@@ -8,13 +8,20 @@
 
 extern void main_b(void);
 extern void main_c(void);
+extern void main_d(void);
+extern void main_shell(void);
 
+static const uint8_t g_task_name_xsh[] = "xsh";
 static const uint8_t g_task_name_b[] = "b";
 static const uint8_t g_task_name_c[] = "c";
+static const uint8_t g_task_name_d[] = "d";
+#define TASK_DEFAULT_WEIGHT_XSH 2u
 
 static const task_spec_t g_task_specs[] = {
+    {g_task_name_xsh, main_shell, TASK_DEFAULT_WEIGHT_XSH},
     {g_task_name_b, main_b, TASK_WEIGHT_MIN},
-    {g_task_name_c, main_c, TASK_WEIGHT_MIN}
+    {g_task_name_c, main_c, TASK_WEIGHT_MIN},
+    {g_task_name_d, main_d, TASK_WEIGHT_MIN}
 };
 
 static uint8_t task_registry_size(void)

@@ -139,4 +139,5 @@ _rtos_start_impl::
     pop bc
     pop af
 
+    ei
     ret

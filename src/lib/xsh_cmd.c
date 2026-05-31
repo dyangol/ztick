@@ -3,6 +3,7 @@
 #include "../common/common.h"
 #include "../bootstrap/rtos.h"
 #include "../drivers/zbus.h"
+#include "target_autostart.h"
 #include "ipc_demo.h"
 #include "task.h"
 #include "xsh.h"
@@ -20,6 +21,7 @@ static const uint8_t g_boot_cfg_line_0[] = "cfg max_tasks=" XSH_CMD_STR(MAX_TASK
 static const uint8_t g_boot_cfg_line_1[] = "cfg task_heap=" XSH_CMD_STR(TASK_HEAP_SIZE) "\n";
 static const uint8_t g_boot_cfg_line_2[] = "cfg zbus tty=" XSH_CMD_STR(ZBUS_MAX_TTY) " rx=" XSH_CMD_STR(ZBUS_BUFFER_SIZE) " txq=" XSH_CMD_STR(ZBUS_TX_QUEUE_SIZE) "\n";
 static const uint8_t g_boot_cfg_line_3[] = "cfg ipc sem_queue=1\n";
+static const uint8_t g_boot_cfg_line_4[] = "cfg autostart=" TARGET_AUTOSTART_RAW "\n";
 static const uint8_t g_shell_banner[] = "Z-Tick shell\n";
 static const uint8_t g_shell_prompt[] = "ztick> ";
 static const uint8_t g_shell_state_unused[] = "unused";
@@ -32,8 +34,8 @@ static const uint8_t g_shell_txt_bad_task[] = "undefined task id";
 static const uint8_t g_shell_usage_help[] = "help";
 static const uint8_t g_shell_usage_cfg[] = "cfg";
 static const uint8_t g_shell_usage_tasks[] = "usage: tasks [task_id]";
-static const uint8_t g_shell_usage_start[] = "usage: start b|c [weight]";
-static const uint8_t g_shell_usage_stop[] = "usage: stop b|c";
+static const uint8_t g_shell_usage_start[] = "usage: start <task_name> [weight]";
+static const uint8_t g_shell_usage_stop[] = "usage: stop <task_name>";
 static const uint8_t g_shell_usage_weight[] = "usage: weight <task_id> <1..3>";
 static const uint8_t g_shell_usage_heap[] = "usage: heap [task_id]";
 static const uint8_t g_shell_usage_stack[] = "usage: stack [task_id]";
@@ -180,6 +182,7 @@ static uint8_t cmd_cfg(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     xsh_write_bytes(sh, g_boot_cfg_line_1, (uint8_t)(sizeof(g_boot_cfg_line_1) - 1u));
     xsh_write_bytes(sh, g_boot_cfg_line_2, (uint8_t)(sizeof(g_boot_cfg_line_2) - 1u));
     xsh_write_bytes(sh, g_boot_cfg_line_3, (uint8_t)(sizeof(g_boot_cfg_line_3) - 1u));
+    xsh_write_bytes(sh, g_boot_cfg_line_4, (uint8_t)(sizeof(g_boot_cfg_line_4) - 1u));
     return 1u;
 }
 
@@ -876,6 +879,7 @@ void xsh_cmd_boot_cfg_emit_once(void)
     (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_1, (uint8_t)(sizeof(g_boot_cfg_line_1) - 1u));
     (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_2, (uint8_t)(sizeof(g_boot_cfg_line_2) - 1u));
     (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_3, (uint8_t)(sizeof(g_boot_cfg_line_3) - 1u));
+    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_4, (uint8_t)(sizeof(g_boot_cfg_line_4) - 1u));
 
     emitted = 1u;
 }

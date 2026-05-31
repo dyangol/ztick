@@ -1,0 +1,73 @@
+<?xml version="1.0" ?>
+<!DOCTYPE msxconfig SYSTEM 'msxconfig2.dtd'>
+<msxconfig>
+
+  <info>
+    <manufacturer>Z-Tick</manufacturer>
+    <code>ztick-unitcard</code>
+    <release_year>2026</release_year>
+    <description>Z-Tick slot1 ROM+RAM card simulation for staged boot.</description>
+    <type>MSX</type>
+    <region>eu</region>
+  </info>
+
+  <devices>
+
+    <PPI id="ppi">
+      <sound>
+        <volume>16000</volume>
+      </sound>
+      <io base="0xA8" num="4"/>
+      <keyboard_type>int</keyboard_type>
+      <has_keypad>false</has_keypad>
+      <key_ghosting_sgc_protected>true</key_ghosting_sgc_protected>
+      <code_kana_locks>false</code_kana_locks>
+      <graph_locks>false</graph_locks>
+    </PPI>
+
+    <VDP id="VDP">
+      <version>TMS9929A</version>
+      <io base="0x98" num="2"/>
+      <saturation>100</saturation>
+    </VDP>
+
+    <PSG id="PSG">
+      <type>YM2149</type>
+      <sound>
+        <volume>21000</volume>
+      </sound>
+      <io base="0xA0" num="4" type="IO"/>
+      <ignorePortDirections>false</ignorePortDirections>
+    </PSG>
+
+    <ResetStatusRegister id="Z-Tick I/O">
+      <io base="0x38" num="1"/>
+    </ResetStatusRegister>
+
+    <primary slot="0">
+      <ROM id="Z-Tick slot0 bootloader ROM">
+        <rom>
+          <filename>bootloader_slot01.rom</filename>
+        </rom>
+        <mem base="0x0000" size="0x8000"/>
+      </ROM>
+    </primary>
+
+    <primary slot="1">
+      <ROM id="Z-Tick slot1 startup ROM">
+        <rom>
+          <filename>startup_slot01.rom</filename>
+        </rom>
+        <mem base="0x0000" size="0x8000"/>
+      </ROM>
+      <RAM id="Z-Tick slot1 RAM high">
+        <mem base="0x8000" size="0x8000"/>
+      </RAM>
+    </primary>
+
+    <primary external="true" slot="2"/>
+    <primary external="true" slot="3"/>
+
+  </devices>
+
+</msxconfig>

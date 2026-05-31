@@ -11,12 +11,13 @@ OPENMSX_SYSTEM_DATA_LABEL=""
 
 usage() {
     cat <<EOF
-Usage: $0 [--target <name>] [--watch-io] [--bp-main-shell] [--self-check]
-       $0 [<target>] [--watch-io] [--bp-main-shell] [--self-check]
+Usage: $0 [--target <name>] [--watch-io] [--bp-main-shell] [--bp-bootloader] [--self-check]
+       $0 [<target>] [--watch-io] [--bp-main-shell] [--bp-bootloader] [--self-check]
 
 Default target: ztick
 Default watchpoints: disabled
 Default shell entry breakpoint: disabled (`_main_shell`)
+Default bootloader entry breakpoint: disabled (`0x0000`)
 Default self-check: disabled
 openMSX binary: \$OPENMSX_BIN (default: openmsx)
 EOF
@@ -26,6 +27,7 @@ TARGET="ztick"
 TARGET_SET=0
 WATCH_IO=0
 BP_MAIN_SHELL=0
+BP_BOOTLOADER=0
 SELF_CHECK=0
 while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -64,6 +66,14 @@ while [ "$#" -gt 0 ]; do
             BP_MAIN_SHELL=0
             shift
             ;;
+        --bp-bootloader)
+            BP_BOOTLOADER=1
+            shift
+            ;;
+        --no-bp-bootloader)
+            BP_BOOTLOADER=0
+            shift
+            ;;
         --self-check)
             SELF_CHECK=1
             shift
@@ -92,7 +102,9 @@ done
 
 TARGET_MANIFEST="$ROOT_DIR/targets/$TARGET.mk"
 TARGET_BIN_DIR="$ROOT_DIR/bin/$TARGET"
-SYMBOL_FILE="$TARGET_BIN_DIR/bootstrap.noi"
+SYMBOL_BASENAME="bootstrap"
+IMAGE_LAYOUT_VALUE=""
+SYMBOL_FILE=""
 LEGACY_SYMBOL_FILE="$ROOT_DIR/bin/bootstrap.noi"
 OPENMSX_IMGUI_INI="$OPENMSX_HOME_DIR/share/imgui.ini"
 IMGUI_SYMBOL_FILE=""
@@ -139,11 +151,18 @@ OPENMSX_MACHINE_NAME="$(manifest_get OPENMSX_MACHINE_NAME)"
 OPENMSX_MACHINE_XML="$(manifest_get OPENMSX_MACHINE_XML)"
 ROM_IMAGE_NAME="$(manifest_get ROM_IMAGE_NAME)"
 IO_DEFAULT_PORT="$(manifest_get IO_DEFAULT_PORT)"
+OPENMSX_EXTRA_ROM_FILES="$(manifest_get OPENMSX_EXTRA_ROM_FILES || true)"
+IMAGE_LAYOUT_VALUE="$(manifest_get IMAGE_LAYOUT)"
 
 if [ -z "$OPENMSX_MACHINE_NAME" ] || [ -z "$OPENMSX_MACHINE_XML" ] || [ -z "$ROM_IMAGE_NAME" ] || [ -z "$IO_DEFAULT_PORT" ]; then
     echo "Missing OPENMSX_MACHINE_NAME/OPENMSX_MACHINE_XML/ROM_IMAGE_NAME/IO_DEFAULT_PORT in $TARGET_MANIFEST" >&2
     exit 1
 fi
+
+if [ "$IMAGE_LAYOUT_VALUE" = "flash2x64" ]; then
+    SYMBOL_BASENAME="startup"
+fi
+SYMBOL_FILE="$TARGET_BIN_DIR/$SYMBOL_BASENAME.noi"
 
 mkdir -p "$MACHINES_DIR"
 
@@ -194,6 +213,16 @@ OPENMSX_ROM_LABEL=""
 if [ -f "$MACHINE_XML_SOURCE" ]; then
     cp "$MACHINE_XML_SOURCE" "$MACHINES_DIR/$OPENMSX_MACHINE_XML"
     cp "$ROM_SOURCE" "$MACHINES_DIR/$ROM_IMAGE_NAME"
+    if [ -n "$OPENMSX_EXTRA_ROM_FILES" ]; then
+        for extra_rom in $OPENMSX_EXTRA_ROM_FILES; do
+            extra_source="$TARGET_BIN_DIR/$extra_rom"
+            if [ ! -f "$extra_source" ]; then
+                echo "Required extra ROM not found for machine profile: $extra_source" >&2
+                exit 1
+            fi
+            cp "$extra_source" "$MACHINES_DIR/$extra_rom"
+        done
+    fi
 else
     if [ "$OPENMSX_MACHINE_NAME" = "Z-Tick" ]; then
         echo "Machine XML missing for Z-Tick target: $MACHINE_XML_SOURCE" >&2
@@ -208,6 +237,8 @@ fi
 
 BREAKPOINT_MAIN_SHELL_LABEL="    -command \"debug set_bp $MAIN_SHELL_ADDR\" \\\\"
 OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS=(-command "if {[catch {debug set_bp $MAIN_SHELL_ADDR} _bp_err]} { puts stderr \"WARN main_shell breakpoint ($MAIN_SHELL_ADDR): \$_bp_err\" }")
+BREAKPOINT_BOOTLOADER_LABEL="    -command \"debug set_bp 0x0000\" \\\\"
+OPENMSX_BREAKPOINT_BOOTLOADER_ARGS=(-command "if {[catch {debug set_bp 0x0000} _bp_boot_err]} { puts stderr \"WARN bootloader breakpoint (0x0000): \$_bp_boot_err\" }")
 OPENMSX_SOURCE_ZLINK_ARGS=(-command "if {[catch {source {$ZLINK_TCL}} _zlink_err]} { puts stderr \"WARN zlink script ($ZLINK_TCL): \$_zlink_err\" }")
 OPENMSX_INSTALL_ZLINK_ARGS=(-command "if {[catch {zlink_dev::install $IO_DEFAULT_PORT} _zlink_install_err]} { puts stderr \"WARN zlink install ($IO_DEFAULT_PORT): \$_zlink_install_err\" }")
 OPENMSX_SELF_CHECK_ARGS=()
@@ -225,6 +256,10 @@ fi
 if [ "$BP_MAIN_SHELL" -eq 0 ]; then
     BREAKPOINT_MAIN_SHELL_LABEL=""
     OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS=()
+fi
+if [ "$BP_BOOTLOADER" -eq 0 ]; then
+    BREAKPOINT_BOOTLOADER_LABEL=""
+    OPENMSX_BREAKPOINT_BOOTLOADER_ARGS=()
 fi
 
 ZMSG_WATCH_PROC='proc zmsg_watch {} { puts [format {io_write port=0x%02X value=0x%02X} [expr {$::wp_last_address & 0xFF}] [expr {$::wp_last_value & 0xFF}]] }'
@@ -245,6 +280,7 @@ $OPENMSX_SYSTEM_DATA_LABEL
   $OPENMSX_BIN -machine $OPENMSX_MACHINE_NAME -ext debugdevice -ext programmabledevice \\
 ${OPENMSX_ROM_LABEL}
     -command "debug symbols load $SYMBOL_FILE" \\
+$BREAKPOINT_BOOTLOADER_LABEL
 $BREAKPOINT_MAIN_SHELL_LABEL
     -command "source $ZLINK_TCL" \\
     -command "zlink_dev::install $IO_DEFAULT_PORT" \\
@@ -260,6 +296,7 @@ fi
 exec "$OPENMSX_BIN" -machine "$OPENMSX_MACHINE_NAME" -ext debugdevice -ext programmabledevice \
     "${OPENMSX_ROM_ARGS[@]}" \
     -command "debug symbols load $SYMBOL_FILE" \
+    "${OPENMSX_BREAKPOINT_BOOTLOADER_ARGS[@]}" \
     "${OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS[@]}" \
     "${OPENMSX_SOURCE_ZLINK_ARGS[@]}" \
     "${OPENMSX_INSTALL_ZLINK_ARGS[@]}" \

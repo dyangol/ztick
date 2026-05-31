@@ -4,21 +4,19 @@
 #include "ipc.h"
 #include "../drivers/io.h"
 #include "../drivers/zbus.h"
+#include "../lib/task.h"
 #include "rtos.h"
+#include "target_autostart.h"
 
 #pragma codeseg CODE
 
 #define TASK_STACK_SIZE 320u
 #define KERNEL_STACK_SIZE 320u
 #define STACK_PATTERN 0xA5u
-#define TASK_WEIGHT 2u
-#define TASK_SLOT_A 0u
 
 #if (MAX_TASKS < 1u)
 #error "MAX_TASKS must be at least 1 for boot task"
 #endif
-
-extern void main_shell(void);
 
 volatile task_control_block_t g_tasks[MAX_TASKS];
 volatile task_control_block_t *g_current_tcb;
@@ -30,7 +28,6 @@ volatile uint8_t g_boot_slot_value;
 
 static uint8_t g_task_stacks[MAX_TASKS][TASK_STACK_SIZE];
 static uint8_t g_kernel_stack[KERNEL_STACK_SIZE];
-static const uint8_t g_task_name_main_shell[] = "xsh";
 
 static void task_reset_runtime_fields(uint8_t slot)
 {
@@ -71,13 +68,6 @@ static void rtos_panic_halt(void)
     while (1) {
         CPU_HALT();
     }
-}
-
-static void task_entry_shell(void)
-{
-    CPU_EI();
-    main_shell();
-    task_exit();
 }
 
 void rtos_start(void) RTOS_NAKED
@@ -274,6 +264,67 @@ static uint8_t find_unused_task_slot(uint8_t *out_slot)
     return 0u;
 }
 
+static uint8_t boot_task_register_named(void (*entry)(void), uint8_t weight, const uint8_t *name, uint8_t *out_task_id)
+{
+    uint8_t slot;
+
+    if (entry == (void (*)(void))0) {
+        return 0u;
+    }
+
+    if (find_unused_task_slot(&slot) == 0u) {
+        return 0u;
+    }
+
+    if (init_task_slot(slot, entry, weight, name) == 0u) {
+        return 0u;
+    }
+
+    task_try_attach_kernel_tty(slot);
+    if (out_task_id != (uint8_t *)0) {
+        *out_task_id = slot;
+    }
+    return 1u;
+}
+
+static uint8_t boot_autostart_apply(uint8_t *out_first_slot)
+{
+#if TARGET_AUTOSTART_COUNT > 0u
+    uint8_t i;
+    uint8_t first_slot = (uint8_t)MAX_TASKS;
+    uint8_t created_slot;
+
+    if (out_first_slot == (uint8_t *)0) {
+        return 0u;
+    }
+    for (i = 0u; i < (uint8_t)TARGET_AUTOSTART_COUNT; ++i) {
+        const task_spec_t *spec = task_registry_find(g_target_autostart[i].name);
+        if (spec == (const task_spec_t *)0) {
+            if (TARGET_AUTOSTART_STRICT != 0u) {
+                return 0u;
+            }
+            continue;
+        }
+
+        if (boot_task_register_named(spec->entry, g_target_autostart[i].weight, spec->name, &created_slot) == 0u) {
+            if (TARGET_AUTOSTART_STRICT != 0u) {
+                return 0u;
+            }
+            continue;
+        }
+        if (first_slot >= MAX_TASKS) {
+            first_slot = created_slot;
+        }
+    }
+    *out_first_slot = first_slot;
+#endif
+
+#if TARGET_AUTOSTART_COUNT == 0u
+    UNUSED(out_first_slot);
+#endif
+    return 1u;
+}
+
 uint8_t rtos_task_register_named(void (*entry)(void), uint8_t weight, const uint8_t *name, uint8_t *out_task_id)
 {
     uint8_t slot;
@@ -378,6 +429,7 @@ uint8_t rtos_task_request_stop(uint8_t task_id)
 void rtos_init(void)
 {
     uint8_t slot;
+    uint8_t first_slot = (uint8_t)MAX_TASKS;
 
     /* Keep IRQs masked while boot-time task frames are being prepared. */
     CPU_DI();
@@ -388,21 +440,17 @@ void rtos_init(void)
         task_reset_runtime_fields(slot);
     }
 
-    /*
-     * Bootstrap task slots are initialized directly here to avoid enabling IRQs
-     * before g_kernel_sp is set and the first scheduler selection is complete.
-     */
-    (void)init_task_slot(TASK_SLOT_A, task_entry_shell, TASK_WEIGHT, g_task_name_main_shell);
-    task_try_attach_kernel_tty(TASK_SLOT_A);
-
-    if (g_tasks[TASK_SLOT_A].state != TASK_READY) {
+    if (boot_autostart_apply(&first_slot) == 0u) {
+        rtos_panic_halt();
+    }
+    if ((first_slot >= MAX_TASKS) || (g_tasks[first_slot].state != TASK_READY)) {
         rtos_panic_halt();
     }
 
     g_kernel_sp = (uint16_t)(g_kernel_stack + KERNEL_STACK_SIZE);
     g_tick_count = 0u;
-    g_current_task = TASK_SLOT_A;
-    g_current_tcb = &g_tasks[TASK_SLOT_A];
+    g_current_task = first_slot;
+    g_current_tcb = &g_tasks[first_slot];
 
     /* rtos_start() restores the first task context and control never returns here. */
 }

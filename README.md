@@ -284,6 +284,7 @@ You can also build a specific target:
 
 ```bash
 make TARGET=ztick bootstrap
+make TARGET=ztick-unitcard bootstrap
 make TARGET=hb-55p bootstrap
 ```
 To remove object code created in previous steps:
@@ -335,8 +336,15 @@ After building, you can start openMSX with the project script. To use the system
 
 ```bash
 ./scripts/setup_openmsx.sh ztick
+./scripts/setup_openmsx.sh ztick-unitcard
 ./scripts/setup_openmsx.sh hb-55p
 ```
+
+`ztick-unitcard` simulates a staged boot flow for a ROM+RAM card in primary slot 1:
+
+* bootloader executes from slot 0 pages 0-1
+* startup executes from slot 1 pages 0-1
+* task/data RAM is in slot 1 pages 2-3
 
 If we want to force local version 21:
 
@@ -392,7 +400,7 @@ Available commands:
   * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
   * `ipc`: `q_used`, `q_cap`
 
-After boot, only shell (`xsh`) starts. Tasks `b` and `c` can be started on demand with:
+After boot, tasks are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1` in bundled targets). Task `c` can be started on demand with:
 
 ```tcl
 zlink_dev::shell_cmd "start b"
