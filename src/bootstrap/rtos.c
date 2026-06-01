@@ -86,7 +86,7 @@ static uint8_t *build_initial_frame(uint8_t *stack_top, void (*entry)(void))
 {
     uint8_t *sp = stack_top;
 
-    /* Frame shape matches the order restored by rtos_context.s. */
+    /* Frame shape matches the order restored by rtos.s. */
     sp = stack_push_u16(sp, (uint16_t)entry); /* PC for ret/reti */
     sp = stack_push_u16(sp, 0u); /* AF  */
     sp = stack_push_u16(sp, 0u); /* BC  */

@@ -1,5 +1,5 @@
 ;; src/bootstrap/rtos.s
-.module rtos_context
+.module rtos
 
 .globl _g_current_tcb
 .globl _g_current_task

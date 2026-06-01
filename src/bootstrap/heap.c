@@ -13,32 +13,32 @@ typedef struct heap_block {
 
 static uint8_t g_heap_areas[MAX_TASKS][TASK_HEAP_SIZE];
 
-static uint16_t align_even(uint16_t size)
+static uint16_t heap_align_even(uint16_t size)
 {
     return (uint16_t)((size + 1u) & 0xFFFEu);
 }
 
-static uint16_t align_even_down(uint16_t size)
+static uint16_t heap_align_even_down(uint16_t size)
 {
     return (uint16_t)(size & 0xFFFEu);
 }
 
-static heap_block_t *task_first_block(uint8_t slot)
+static heap_block_t *heap_task_first_block(uint8_t slot)
 {
     return (heap_block_t *)(g_tasks[slot].heap_first);
 }
 
-static uint8_t *task_heap_base(uint8_t slot)
+static uint8_t *heap_task_base(uint8_t slot)
 {
     return (uint8_t *)(g_tasks[slot].heap_base);
 }
 
-static uint16_t task_heap_size(uint8_t slot)
+static uint16_t heap_task_size(uint8_t slot)
 {
     return g_tasks[slot].heap_size;
 }
 
-static uint8_t collect_heap_stats(uint8_t slot, heap_stats_t *out)
+static uint8_t heap_collect_stats(uint8_t slot, heap_stats_t *out)
 {
     heap_block_t *block;
 
@@ -50,7 +50,7 @@ static uint8_t collect_heap_stats(uint8_t slot, heap_stats_t *out)
     out->free_blocks = 0u;
     out->used_blocks = 0u;
 
-    block = task_first_block(slot);
+    block = heap_task_first_block(slot);
     while (block != (heap_block_t *)0) {
         if (block->used == 0u) {
             out->free_blocks++;
@@ -78,10 +78,10 @@ void rtos_heap_reset_task(uint8_t slot)
     g_tasks[slot].heap_size = TASK_HEAP_SIZE;
     g_tasks[slot].heap_first = g_tasks[slot].heap_base;
 
-    first = task_first_block(slot);
+    first = heap_task_first_block(slot);
     usable = (uint16_t)(TASK_HEAP_SIZE - (uint16_t)sizeof(heap_block_t));
     first->next = (heap_block_t *)0;
-    first->size = align_even_down(usable);
+    first->size = heap_align_even_down(usable);
     first->used = 0u;
 }
 
@@ -95,7 +95,7 @@ void *rtos_malloc(uint16_t size)
         return (void *)0;
     }
 
-    size = align_even(size);
+    size = heap_align_even(size);
 
     CPU_DI();
 
@@ -105,7 +105,7 @@ void *rtos_malloc(uint16_t size)
         return (void *)0;
     }
 
-    block = task_first_block(slot);
+    block = heap_task_first_block(slot);
     while (block != (heap_block_t *)0) {
         if ((block->used == 0u) && (block->size >= size)) {
             uint16_t remainder = (uint16_t)(block->size - size);
@@ -154,15 +154,15 @@ uint8_t rtos_free(void *ptr)
         return 0u;
     }
 
-    base = task_heap_base(slot);
-    end = base + task_heap_size(slot);
+    base = heap_task_base(slot);
+    end = base + heap_task_size(slot);
 
     if (((uint8_t *)ptr < base) || ((uint8_t *)ptr >= end)) {
         CPU_EI();
         return 0u;
     }
 
-    block = task_first_block(slot);
+    block = heap_task_first_block(slot);
     while (block != (heap_block_t *)0) {
         if ((void *)(block + 1) == ptr) {
             heap_block_t *next;
@@ -212,12 +212,12 @@ uint8_t rtos_heap_stats(uint8_t slot, heap_stats_t *out)
     uint8_t ok;
 
     CPU_DI();
-    ok = collect_heap_stats(slot, out);
+    ok = heap_collect_stats(slot, out);
     CPU_EI();
     return ok;
 }
 
 uint8_t rtos_heap_stats_isr(uint8_t slot, heap_stats_t *out)
 {
-    return collect_heap_stats(slot, out);
+    return heap_collect_stats(slot, out);
 }

@@ -1,5 +1,5 @@
-#ifndef IPC_H
-#define IPC_H
+#ifndef BOOTSTRAP_IPC_H
+#define BOOTSTRAP_IPC_H
 
 #include <stdint.h>
 

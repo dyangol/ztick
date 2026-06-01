@@ -66,6 +66,71 @@ static uint8_t ipc_sem_wait_internal(ipc_semaphore_t *sem, uint8_t wait_state)
     return (g_tasks[slot].wait_status == IPC_TASK_WAIT_OK) ? 1u : 0u;
 }
 
+static uint8_t ipc_queue_is_valid(const ipc_queue_t *queue)
+{
+    if ((queue == (const ipc_queue_t *)0) || (queue->storage == (uint8_t *)0)
+        || (queue->item_size == 0u) || (queue->capacity == 0u)) {
+        return 0u;
+    }
+
+    return 1u;
+}
+
+static uint16_t ipc_queue_item_offset(const ipc_queue_t *queue, uint8_t index)
+{
+    return (uint16_t)((uint16_t)index * (uint16_t)queue->item_size);
+}
+
+static void ipc_queue_copy_to_storage(ipc_queue_t *queue, uint8_t index, const uint8_t *item)
+{
+    uint16_t offset = ipc_queue_item_offset(queue, index);
+    uint8_t i;
+
+    for (i = 0u; i < queue->item_size; ++i) {
+        queue->storage[(uint16_t)(offset + i)] = item[i];
+    }
+}
+
+static void ipc_queue_copy_from_storage(const ipc_queue_t *queue, uint8_t index, uint8_t *out_item)
+{
+    uint16_t offset = ipc_queue_item_offset(queue, index);
+    uint8_t i;
+
+    for (i = 0u; i < queue->item_size; ++i) {
+        out_item[i] = queue->storage[(uint16_t)(offset + i)];
+    }
+}
+
+static uint8_t ipc_queue_push_locked(ipc_queue_t *queue, const uint8_t *item)
+{
+    if (queue->used >= queue->capacity) {
+        return 0u;
+    }
+
+    ipc_queue_copy_to_storage(queue, queue->head, item);
+    queue->head++;
+    if (queue->head >= queue->capacity) {
+        queue->head = 0u;
+    }
+    queue->used++;
+    return 1u;
+}
+
+static uint8_t ipc_queue_pop_locked(ipc_queue_t *queue, uint8_t *out_item)
+{
+    if (queue->used == 0u) {
+        return 0u;
+    }
+
+    ipc_queue_copy_from_storage(queue, queue->tail, out_item);
+    queue->tail++;
+    if (queue->tail >= queue->capacity) {
+        queue->tail = 0u;
+    }
+    queue->used--;
+    return 1u;
+}
+
 static void ipc_queue_init_raw(ipc_queue_t *queue, uint8_t *storage, uint8_t item_size, uint8_t capacity)
 {
     queue->storage = storage;
@@ -163,11 +228,7 @@ void ipc_queue_init_isr(ipc_queue_t *queue, uint8_t *storage, uint8_t item_size,
 
 uint8_t ipc_queue_send(ipc_queue_t *queue, const uint8_t *item)
 {
-    uint16_t offset;
-    uint8_t i;
-
-    if ((queue == (ipc_queue_t *)0) || (item == (const uint8_t *)0) || (queue->storage == (uint8_t *)0)
-        || (queue->item_size == 0u) || (queue->capacity == 0u)) {
+    if ((item == (const uint8_t *)0) || (ipc_queue_is_valid(queue) == 0u)) {
         return 0u;
     }
 
@@ -176,21 +237,11 @@ uint8_t ipc_queue_send(ipc_queue_t *queue, const uint8_t *item)
     }
 
     CPU_DI();
-    if (queue->used >= queue->capacity) {
+    if (ipc_queue_push_locked(queue, item) == 0u) {
         CPU_EI();
+        ipc_sem_signal(&queue->sem_slots);
         return 0u;
     }
-
-    offset = (uint16_t)((uint16_t)queue->head * (uint16_t)queue->item_size);
-    for (i = 0u; i < queue->item_size; ++i) {
-        queue->storage[(uint16_t)(offset + i)] = item[i];
-    }
-
-    queue->head++;
-    if (queue->head >= queue->capacity) {
-        queue->head = 0u;
-    }
-    queue->used++;
     CPU_EI();
 
     ipc_sem_signal(&queue->sem_items);
@@ -199,11 +250,7 @@ uint8_t ipc_queue_send(ipc_queue_t *queue, const uint8_t *item)
 
 uint8_t ipc_queue_recv(ipc_queue_t *queue, uint8_t *out_item)
 {
-    uint16_t offset;
-    uint8_t i;
-
-    if ((queue == (ipc_queue_t *)0) || (out_item == (uint8_t *)0) || (queue->storage == (uint8_t *)0)
-        || (queue->item_size == 0u) || (queue->capacity == 0u)) {
+    if ((out_item == (uint8_t *)0) || (ipc_queue_is_valid(queue) == 0u)) {
         return 0u;
     }
 
@@ -212,21 +259,11 @@ uint8_t ipc_queue_recv(ipc_queue_t *queue, uint8_t *out_item)
     }
 
     CPU_DI();
-    if (queue->used == 0u) {
+    if (ipc_queue_pop_locked(queue, out_item) == 0u) {
         CPU_EI();
+        ipc_sem_signal(&queue->sem_items);
         return 0u;
     }
-
-    offset = (uint16_t)((uint16_t)queue->tail * (uint16_t)queue->item_size);
-    for (i = 0u; i < queue->item_size; ++i) {
-        out_item[i] = queue->storage[(uint16_t)(offset + i)];
-    }
-
-    queue->tail++;
-    if (queue->tail >= queue->capacity) {
-        queue->tail = 0u;
-    }
-    queue->used--;
     CPU_EI();
 
     ipc_sem_signal(&queue->sem_slots);
@@ -235,11 +272,7 @@ uint8_t ipc_queue_recv(ipc_queue_t *queue, uint8_t *out_item)
 
 uint8_t ipc_queue_try_send(ipc_queue_t *queue, const uint8_t *item)
 {
-    uint16_t offset;
-    uint8_t i;
-
-    if ((queue == (ipc_queue_t *)0) || (item == (const uint8_t *)0) || (queue->storage == (uint8_t *)0)
-        || (queue->item_size == 0u) || (queue->capacity == 0u)) {
+    if ((item == (const uint8_t *)0) || (ipc_queue_is_valid(queue) == 0u)) {
         return 0u;
     }
 
@@ -248,21 +281,11 @@ uint8_t ipc_queue_try_send(ipc_queue_t *queue, const uint8_t *item)
     }
 
     CPU_DI();
-    if (queue->used >= queue->capacity) {
+    if (ipc_queue_push_locked(queue, item) == 0u) {
         CPU_EI();
+        ipc_sem_signal(&queue->sem_slots);
         return 0u;
     }
-
-    offset = (uint16_t)((uint16_t)queue->head * (uint16_t)queue->item_size);
-    for (i = 0u; i < queue->item_size; ++i) {
-        queue->storage[(uint16_t)(offset + i)] = item[i];
-    }
-
-    queue->head++;
-    if (queue->head >= queue->capacity) {
-        queue->head = 0u;
-    }
-    queue->used++;
     CPU_EI();
 
     ipc_sem_signal(&queue->sem_items);
@@ -271,11 +294,7 @@ uint8_t ipc_queue_try_send(ipc_queue_t *queue, const uint8_t *item)
 
 uint8_t ipc_queue_try_recv(ipc_queue_t *queue, uint8_t *out_item)
 {
-    uint16_t offset;
-    uint8_t i;
-
-    if ((queue == (ipc_queue_t *)0) || (out_item == (uint8_t *)0) || (queue->storage == (uint8_t *)0)
-        || (queue->item_size == 0u) || (queue->capacity == 0u)) {
+    if ((out_item == (uint8_t *)0) || (ipc_queue_is_valid(queue) == 0u)) {
         return 0u;
     }
 
@@ -284,21 +303,11 @@ uint8_t ipc_queue_try_recv(ipc_queue_t *queue, uint8_t *out_item)
     }
 
     CPU_DI();
-    if (queue->used == 0u) {
+    if (ipc_queue_pop_locked(queue, out_item) == 0u) {
         CPU_EI();
+        ipc_sem_signal(&queue->sem_items);
         return 0u;
     }
-
-    offset = (uint16_t)((uint16_t)queue->tail * (uint16_t)queue->item_size);
-    for (i = 0u; i < queue->item_size; ++i) {
-        out_item[i] = queue->storage[(uint16_t)(offset + i)];
-    }
-
-    queue->tail++;
-    if (queue->tail >= queue->capacity) {
-        queue->tail = 0u;
-    }
-    queue->used--;
     CPU_EI();
 
     ipc_sem_signal(&queue->sem_slots);

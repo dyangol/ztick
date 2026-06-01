@@ -1,5 +1,5 @@
-#ifndef RTOS_H
-#define RTOS_H
+#ifndef BOOTSTRAP_RTOS_H
+#define BOOTSTRAP_RTOS_H
 
 #include <stdint.h>
 
