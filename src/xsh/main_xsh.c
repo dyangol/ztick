@@ -23,6 +23,7 @@ const task_spec_t g_task_spec_xsh = {
     g_task_name_xsh,
     main_xsh,
     2u,
+    0u,
     (const uint8_t *)0,
     (task_start_args_configure_t)0,
     (task_start_args_reset_t)0

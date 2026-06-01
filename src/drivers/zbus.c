@@ -135,6 +135,113 @@ static void zbus_set_tty_attached(uint8_t tty_id, uint8_t owner_task_id, uint8_t
     zbus_reset_rx_queue(tty_id);
 }
 
+static uint8_t zbus_text_append_cstr(uint8_t *buf, uint8_t *io_len, uint8_t max_len, const uint8_t *text)
+{
+    uint8_t len = *io_len;
+
+    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0) || (text == (const uint8_t *)0)) {
+        return 0u;
+    }
+
+    while (*text != 0u) {
+        if (len >= max_len) {
+            return 0u;
+        }
+        buf[len] = *text;
+        len++;
+        text++;
+    }
+
+    *io_len = len;
+    return 1u;
+}
+
+static uint8_t zbus_text_append_u8_dec(uint8_t *buf, uint8_t *io_len, uint8_t max_len, uint8_t value)
+{
+    uint8_t tmp[3];
+    uint8_t digits = 0u;
+    uint8_t i;
+    uint8_t len = *io_len;
+
+    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
+        return 0u;
+    }
+
+    if (value == 0u) {
+        if (len >= max_len) {
+            return 0u;
+        }
+        buf[len] = (uint8_t)'0';
+        *io_len = (uint8_t)(len + 1u);
+        return 1u;
+    }
+
+    while (value > 0u) {
+        tmp[digits] = (uint8_t)('0' + (value % 10u));
+        digits++;
+        value = (uint8_t)(value / 10u);
+    }
+
+    for (i = digits; i > 0u; --i) {
+        if (len >= max_len) {
+            return 0u;
+        }
+        buf[len] = tmp[(uint8_t)(i - 1u)];
+        len++;
+    }
+
+    *io_len = len;
+    return 1u;
+}
+
+static void zbus_kernel_emit_tty_fallback(uint8_t owner_task_id, uint8_t requested_tty, uint8_t assigned_tty)
+{
+    uint8_t payload[64];
+    uint8_t len = 0u;
+    uint8_t ok = 1u;
+
+    ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)"kern tty-fallback task=");
+    if (ok != 0u) {
+        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), owner_task_id);
+    }
+    if (ok != 0u) {
+        ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)" req=");
+    }
+    if (ok != 0u) {
+        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), requested_tty);
+    }
+    if (ok != 0u) {
+        ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)" got=");
+    }
+    if (ok != 0u) {
+        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), assigned_tty);
+    }
+
+    if ((ok != 0u) && (len > 0u)) {
+        if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, len) == 0u) {
+            COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
+        }
+    }
+}
+
+static uint8_t zbus_tty_attach_exact_internal(uint8_t owner_task_id, uint8_t tty_id, uint8_t io_port, uint8_t enable_rx_polling, uint8_t *out_tty_id)
+{
+    if ((out_tty_id == (uint8_t *)0) || (zbus_is_valid_tty(tty_id) == 0u)) {
+        return 0u;
+    }
+    if (g_zbus_tty_table[tty_id].state != ZBUS_TTY_DETACHED) {
+        return 0u;
+    }
+
+    zbus_set_tty_attached(tty_id, owner_task_id, io_port);
+    g_zbus_tty_table[tty_id].rx_polling_enabled = (enable_rx_polling != 0u) ? 1u : 0u;
+    if (owner_task_id < MAX_TASKS) {
+        g_zbus_legacy_tty_by_task[owner_task_id] = tty_id;
+    }
+    *out_tty_id = tty_id;
+    return 1u;
+}
+
 static void zbus_stats_clear(void)
 {
     g_zbus_stat_tx_drop = 0u;
@@ -453,12 +560,38 @@ uint8_t zbus_tty_attach(uint8_t io_port, uint8_t *out_tty_id)
 
 uint8_t zbus_tty_attach_for_task(uint8_t owner_task_id, uint8_t io_port, uint8_t enable_rx_polling, uint8_t *out_tty_id)
 {
+    return zbus_tty_attach_for_task_preferred(owner_task_id, (uint8_t)ZBUS_TTY_AUTO, io_port, enable_rx_polling, out_tty_id, (uint8_t *)0);
+}
+
+uint8_t zbus_tty_attach_for_task_preferred(uint8_t owner_task_id, uint8_t preferred_tty, uint8_t io_port, uint8_t enable_rx_polling, uint8_t *out_tty_id, uint8_t *out_fallback)
+{
+    uint8_t had_preference = (preferred_tty != (uint8_t)ZBUS_TTY_AUTO) ? 1u : 0u;
+
+    if (out_fallback != (uint8_t *)0) {
+        *out_fallback = 0u;
+    }
     if (owner_task_id >= MAX_TASKS) {
         return 0u;
     }
 
     /* Caller controls IRQ masking; this path is used by kernel-owned setup. */
-    return zbus_tty_attach_internal(owner_task_id, io_port, enable_rx_polling, out_tty_id);
+    if ((had_preference != 0u) && (preferred_tty < ZBUS_MAX_TTY)) {
+        if (zbus_tty_attach_exact_internal(owner_task_id, preferred_tty, io_port, enable_rx_polling, out_tty_id) != 0u) {
+            return 1u;
+        }
+    }
+
+    if (zbus_tty_attach_internal(owner_task_id, io_port, enable_rx_polling, out_tty_id) == 0u) {
+        return 0u;
+    }
+
+    if ((had_preference != 0u) && (preferred_tty < ZBUS_MAX_TTY) && (out_tty_id != (uint8_t *)0)) {
+        if (out_fallback != (uint8_t *)0) {
+            *out_fallback = 1u;
+        }
+        zbus_kernel_emit_tty_fallback(owner_task_id, preferred_tty, *out_tty_id);
+    }
+    return 1u;
 }
 
 uint8_t zbus_tty_get_for_task(uint8_t owner_task_id, uint8_t *out_tty_id)

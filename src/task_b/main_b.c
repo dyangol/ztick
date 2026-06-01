@@ -35,6 +35,7 @@ const task_spec_t g_task_spec_b = {
     g_task_name_b,
     main_b,
     TASK_WEIGHT_MIN,
+    (uint8_t)TASK_TTY_AUTO,
     g_task_b_start_args_usage,
     task_b_start_configure,
     task_b_start_reset

@@ -27,6 +27,10 @@
 #define ZBUS_KERNEL_TTY_ID 15u
 #endif
 
+#ifndef ZBUS_TTY_AUTO
+#define ZBUS_TTY_AUTO 0xFFu
+#endif
+
 #ifndef ZBUS_RX_CHUNK
 #define ZBUS_RX_CHUNK 1u
 #endif
@@ -50,6 +54,7 @@ void zbus_init(void);
 void zbus_tick(void);
 uint8_t zbus_tty_attach(uint8_t io_port, uint8_t *out_tty_id);
 uint8_t zbus_tty_attach_for_task(uint8_t owner_task_id, uint8_t io_port, uint8_t enable_rx_polling, uint8_t *out_tty_id);
+uint8_t zbus_tty_attach_for_task_preferred(uint8_t owner_task_id, uint8_t preferred_tty, uint8_t io_port, uint8_t enable_rx_polling, uint8_t *out_tty_id, uint8_t *out_fallback);
 uint8_t zbus_tty_get_for_task(uint8_t owner_task_id, uint8_t *out_tty_id);
 uint8_t zbus_tty_get_current(uint8_t *out_tty_id);
 uint8_t zbus_tty_detach(uint8_t tty_id);

@@ -222,10 +222,12 @@ static void task_mark_unused(uint8_t slot)
     rtos_heap_reset_task(slot);
 }
 
-static void task_try_attach_kernel_tty(uint8_t slot)
+static void task_try_attach_kernel_tty(uint8_t slot, uint8_t requested_tty)
 {
     uint8_t tty_id;
-    (void)zbus_tty_attach_for_task(slot, (uint8_t)IO_DEFAULT_PORT, 1u, &tty_id);
+    uint8_t fallback;
+
+    (void)zbus_tty_attach_for_task_preferred(slot, requested_tty, (uint8_t)IO_DEFAULT_PORT, 1u, &tty_id, &fallback);
 }
 
 static uint8_t init_task_slot(uint8_t slot, void (*entry)(void), uint8_t weight, const uint8_t *name)
@@ -264,11 +266,11 @@ static uint8_t find_unused_task_slot(uint8_t *out_slot)
     return 0u;
 }
 
-static uint8_t boot_task_register_named(void (*entry)(void), uint8_t weight, const uint8_t *name, uint8_t *out_task_id)
+static uint8_t boot_task_register_spec(const task_spec_t *spec, uint8_t weight, uint8_t *out_task_id)
 {
     uint8_t slot;
 
-    if (entry == (void (*)(void))0) {
+    if ((spec == (const task_spec_t *)0) || (spec->entry == (void (*)(void))0)) {
         return 0u;
     }
 
@@ -276,11 +278,11 @@ static uint8_t boot_task_register_named(void (*entry)(void), uint8_t weight, con
         return 0u;
     }
 
-    if (init_task_slot(slot, entry, weight, name) == 0u) {
+    if (init_task_slot(slot, spec->entry, weight, spec->name) == 0u) {
         return 0u;
     }
 
-    task_try_attach_kernel_tty(slot);
+    task_try_attach_kernel_tty(slot, spec->requested_tty);
     if (out_task_id != (uint8_t *)0) {
         *out_task_id = slot;
     }
@@ -306,7 +308,7 @@ static uint8_t boot_autostart_apply(uint8_t *out_first_slot)
             continue;
         }
 
-        if (boot_task_register_named(spec->entry, g_target_autostart[i].weight, spec->name, &created_slot) == 0u) {
+        if (boot_task_register_spec(spec, g_target_autostart[i].weight, &created_slot) == 0u) {
             if (TARGET_AUTOSTART_STRICT != 0u) {
                 return 0u;
             }
@@ -327,9 +329,24 @@ static uint8_t boot_autostart_apply(uint8_t *out_first_slot)
 
 uint8_t rtos_task_register_named(void (*entry)(void), uint8_t weight, const uint8_t *name, uint8_t *out_task_id)
 {
+    const task_spec_t spec = {
+        name,
+        entry,
+        weight,
+        (uint8_t)TASK_TTY_AUTO,
+        (const uint8_t *)0,
+        (task_start_args_configure_t)0,
+        (task_start_args_reset_t)0
+    };
+
+    return rtos_task_register_spec(&spec, weight, out_task_id);
+}
+
+uint8_t rtos_task_register_spec(const task_spec_t *spec, uint8_t weight, uint8_t *out_task_id)
+{
     uint8_t slot;
 
-    if (entry == (void (*)(void))0) {
+    if ((spec == (const task_spec_t *)0) || (spec->entry == (void (*)(void))0)) {
         return 0u;
     }
 
@@ -340,12 +357,12 @@ uint8_t rtos_task_register_named(void (*entry)(void), uint8_t weight, const uint
         return 0u;
     }
 
-    if (init_task_slot(slot, entry, weight, name) == 0u) {
+    if (init_task_slot(slot, spec->entry, weight, spec->name) == 0u) {
         CPU_EI();
         return 0u;
     }
 
-    task_try_attach_kernel_tty(slot);
+    task_try_attach_kernel_tty(slot, spec->requested_tty);
     if (out_task_id != (uint8_t *)0) {
         *out_task_id = slot;
     }

@@ -34,7 +34,7 @@ static const uint8_t g_xsh_cmd_txt_bad_task[] = "undefined task id";
 static const uint8_t g_xsh_cmd_usage_help[] = "help";
 static const uint8_t g_xsh_cmd_usage_cfg[] = "cfg";
 static const uint8_t g_xsh_cmd_usage_tasks[] = "usage: tasks [task_id]";
-static const uint8_t g_xsh_cmd_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [args...]";
+static const uint8_t g_xsh_cmd_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [t=<0..9>|tty=<0..9>|t=auto] [args...]";
 static const uint8_t g_xsh_cmd_usage_stop[] = "usage: stop <task_name>";
 static const uint8_t g_xsh_cmd_usage_weight[] = "usage: weight <task_id> <1..3>";
 static const uint8_t g_xsh_cmd_usage_heap[] = "usage: heap [task_id]";
@@ -155,7 +155,7 @@ static void xsh_cmd_emit_start_usage(xsh_t *sh)
 {
     xsh_write_cstr(sh, (const uint8_t *)"usage: start ");
     xsh_cmd_emit_task_name_choices(sh);
-    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>] [args...]");
+    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>] [t=<0..9>|tty=<0..9>|t=auto] [args...]");
     xsh_newline(sh);
 }
 
@@ -172,7 +172,7 @@ static void xsh_cmd_emit_start_usage_for_spec(xsh_t *sh, const task_spec_t *spec
 
     xsh_write_cstr(sh, (const uint8_t *)"usage: start ");
     xsh_write_cstr(sh, spec->name);
-    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>]");
+    xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>] [t=<0..9>|tty=<0..9>|t=auto]");
     if (spec->start_args_usage != (const uint8_t *)0) {
         xsh_write_cstr(sh, (const uint8_t *)" [");
         xsh_write_cstr(sh, spec->start_args_usage);
@@ -283,9 +283,51 @@ static uint8_t xsh_cmd_parse_weight_assignment(const uint8_t *text, uint8_t *out
     return xsh_cmd_parse_weight(&text[2], out_weight);
 }
 
-static uint8_t xsh_cmd_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t weight)
+static uint8_t xsh_cmd_parse_tty_value(const uint8_t *text, uint8_t *out_tty)
+{
+    uint8_t tty_id;
+
+    if ((text == (const uint8_t *)0) || (out_tty == (uint8_t *)0)) {
+        return 0u;
+    }
+
+    if ((text[0] == (uint8_t)'a') && (text[1] == (uint8_t)'u') && (text[2] == (uint8_t)'t')
+        && (text[3] == (uint8_t)'o') && (text[4] == 0u)) {
+        *out_tty = (uint8_t)TASK_TTY_AUTO;
+        return 1u;
+    }
+
+    if (xsh_parse_u8(text, &tty_id) == 0u) {
+        return 0u;
+    }
+    if (tty_id >= ZBUS_MAX_TTY) {
+        return 0u;
+    }
+
+    *out_tty = tty_id;
+    return 1u;
+}
+
+static uint8_t xsh_cmd_parse_tty_assignment(const uint8_t *text, uint8_t *out_tty)
+{
+    if ((text == (const uint8_t *)0) || (out_tty == (uint8_t *)0)) {
+        return 0u;
+    }
+
+    if ((text[0] == (uint8_t)'t') && (text[1] == (uint8_t)'=')) {
+        return xsh_cmd_parse_tty_value(&text[2], out_tty);
+    }
+    if ((text[0] == (uint8_t)'t') && (text[1] == (uint8_t)'t') && (text[2] == (uint8_t)'y') && (text[3] == (uint8_t)'=')) {
+        return xsh_cmd_parse_tty_value(&text[4], out_tty);
+    }
+
+    return 0u;
+}
+
+static uint8_t xsh_cmd_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t weight, uint8_t requested_tty)
 {
     uint8_t slot;
+    task_spec_t start_spec;
 
     if (spec == (const task_spec_t *)0) {
         return 0u;
@@ -298,7 +340,10 @@ static uint8_t xsh_cmd_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8
         return 1u;
     }
 
-    if (rtos_task_register_named(spec->entry, weight, spec->name, &slot) == 0u) {
+    start_spec = *spec;
+    start_spec.requested_tty = requested_tty;
+
+    if (rtos_task_register_spec(&start_spec, weight, &slot) == 0u) {
         xsh_write_cstr(sh, (const uint8_t *)"start failed");
         xsh_newline(sh);
         return 0u;
@@ -319,8 +364,10 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     const task_spec_t *spec;
     uint8_t weight;
+    uint8_t requested_tty;
     uint8_t idx;
     uint8_t has_weight = 0u;
+    uint8_t has_tty = 0u;
     uint8_t task_argv[XSH_ARGV_MAX];
     uint8_t task_argc = 0u;
     uint8_t running_slot;
@@ -337,9 +384,11 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     }
 
     weight = spec->default_weight;
+    requested_tty = spec->requested_tty;
 
     for (idx = 2u; idx < argc; ++idx) {
         uint8_t parsed_weight;
+        uint8_t parsed_tty;
 
         if ((idx == 2u) && (xsh_cmd_parse_weight(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
             weight = parsed_weight;
@@ -350,6 +399,15 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         if ((xsh_cmd_parse_weight_assignment(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
             weight = parsed_weight;
             has_weight = 1u;
+            continue;
+        }
+        if (xsh_cmd_parse_tty_assignment(argv[idx], &parsed_tty) != 0u) {
+            if (has_tty != 0u) {
+                xsh_cmd_emit_start_usage_for_spec(sh, spec);
+                return 0u;
+            }
+            requested_tty = parsed_tty;
+            has_tty = 1u;
             continue;
         }
 
@@ -363,7 +421,7 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     }
 
     if (xsh_cmd_find_task_by_name(spec->name, &running_slot) != 0u) {
-        return xsh_cmd_start_task_spec(sh, spec, weight);
+        return xsh_cmd_start_task_spec(sh, spec, weight, requested_tty);
     }
 
     if (task_argc != 0u) {
@@ -385,7 +443,7 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         return 0u;
     }
 
-    if (xsh_cmd_start_task_spec(sh, spec, weight) == 0u) {
+    if (xsh_cmd_start_task_spec(sh, spec, weight, requested_tty) == 0u) {
         task_registry_start_reset(spec);
         return 0u;
     }

@@ -25,6 +25,7 @@ const task_spec_t g_task_spec_rchk = {
     g_task_name_rchk,
     main_rchk,
     TASK_WEIGHT_MIN,
+    (uint8_t)TASK_TTY_AUTO,
     g_rchk_start_args_usage,
     rchk_start_configure,
     rchk_start_reset

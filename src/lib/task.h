@@ -7,10 +7,13 @@ typedef void (*task_entry_t)(void);
 typedef uint8_t (*task_start_args_configure_t)(uint8_t argc, uint8_t *argv[]);
 typedef void (*task_start_args_reset_t)(void);
 
+#define TASK_TTY_AUTO 0xFFu
+
 typedef struct task_spec {
     const uint8_t *name;
     task_entry_t entry;
     uint8_t default_weight;
+    uint8_t requested_tty;
     const uint8_t *start_args_usage;
     task_start_args_configure_t start_args_configure;
     task_start_args_reset_t start_args_reset;

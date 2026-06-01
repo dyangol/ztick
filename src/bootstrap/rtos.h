@@ -2,6 +2,7 @@
 #define BOOTSTRAP_RTOS_H
 
 #include <stdint.h>
+#include "../lib/task.h"
 
 #define MAX_TASKS 6u
 #define TASK_NAME_MAX 8u
@@ -58,6 +59,7 @@ void timer_init(void);
 void timer_acknowledge(void);
 uint8_t rtos_task_register(void (*entry)(void), uint8_t weight, uint8_t *out_task_id);
 uint8_t rtos_task_register_named(void (*entry)(void), uint8_t weight, const uint8_t *name, uint8_t *out_task_id);
+uint8_t rtos_task_register_spec(const task_spec_t *spec, uint8_t weight, uint8_t *out_task_id);
 uint8_t rtos_task_unregister(uint8_t task_id);
 uint8_t rtos_task_request_stop(uint8_t task_id);
 /* Weight is clamped to TASK_WEIGHT_MIN..TASK_WEIGHT_MAX. */
