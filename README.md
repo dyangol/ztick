@@ -390,7 +390,7 @@ Available commands:
 * `help`: Shows `commands: help cfg tasks start stop weight heap stack stats`
 * `cfg`: Shows compiled configuration (`max_tasks`, `task_heap`, `zbus` parameters, etc.).
 * `tasks [task_id]`: Without args: counts active tasks and shows `task <id> name=<name>`. With `task_id`: shows details `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
-* `start <task_name> [weight]`: Starts a task from the registry (`task_registry`), currently `b` and `c`. Optional `weight` in range `1..3`.
+* `start <task_name> [weight]`: Starts a task from the registry (`task_registry`), currently `b`, `c` and `rchk`. Optional `weight` in range `1..3`.
 * `stop <task_name>`: Requests stop for a running task.
 * `weight <task_id> <1..3>`: Changes scheduling weight of a task.
 * `heap [task_id]`: Shows per-task heap status: `free`, `free_blocks`, `used_blocks`.
@@ -406,6 +406,7 @@ After boot, tasks are created from the target manifest via `BOOT_AUTOSTART` (cur
 zlink_dev::shell_cmd "start b"
 zlink_dev::shell_cmd "start c"
 zlink_dev::shell_cmd "start b 3"
+zlink_dev::shell_cmd "start rchk safe"
 zlink_dev::shell_cmd "weight 1 2"
 zlink_dev::shell_cmd "stop b"
 zlink_dev::shell_cmd "stop c"

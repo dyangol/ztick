@@ -389,7 +389,7 @@ Comandes disponibles:
 * `help`: Mostra: `commands: help cfg tasks start stop weight heap stack stats`
 * `cfg`: Mostra la configuració compilada (`max_tasks`, `task_heap`, paràmetres `zbus`, etc.).
 * `tasks [task_id]`: Sense arguments: compta tasks actives i mostra `task <id> name=<nom>`. Amb `task_id`: mostra detall `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
-* `start <task_name> [weight]`: Arrenca una task del registre (`task_registry`), actualment `b` i `c`. El paràmetre `weight` opcional a rang `1..3`.
+* `start <task_name> [weight]`: Arrenca una task del registre (`task_registry`), actualment `b`, `c` i `rchk`. El paràmetre `weight` opcional a rang `1..3`.
 * `stop <task_name>`: Sol·licita parada d'una task en execució.
 * `weight <task_id> <1..3>`: Canvia el pes de planificació d'una task.
 * `heap [task_id]`: Mostra estat de heap per task: `free`, `free_blocks`, `used_blocks`.
@@ -405,6 +405,7 @@ Després del boot, les tasks es creen des del manifest del target via `BOOT_AUTO
 zlink_dev::shell_cmd "start b"
 zlink_dev::shell_cmd "start c"
 zlink_dev::shell_cmd "start b 3"
+zlink_dev::shell_cmd "start rchk safe"
 zlink_dev::shell_cmd "weight 1 2"
 zlink_dev::shell_cmd "stop b"
 zlink_dev::shell_cmd "stop c"

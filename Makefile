@@ -55,7 +55,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/task.rel \
 	$(BUILD_DIR)/args_b.rel \
 	$(BUILD_DIR)/args_c.rel \
-	$(BUILD_DIR)/args_d.rel \
+	$(BUILD_DIR)/args_rchk.rel \
 	$(BUILD_DIR)/args.rel \
 	$(BUILD_DIR)/pipe.rel \
 	$(BUILD_DIR)/sprint.rel \
@@ -69,7 +69,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/main_shell.rel \
 	$(BUILD_DIR)/main_b.rel \
 	$(BUILD_DIR)/main_c.rel \
-	$(BUILD_DIR)/main_d.rel
+	$(BUILD_DIR)/main_rchk.rel
 
 $(BUILD_DIR)/target_boot.inc: setup
 	@printf ";; Auto-generated from %s\n" "$(TARGET_MANIFEST)" > $@
@@ -119,46 +119,46 @@ $(BUILD_DIR)/target_autostart.h: setup
 	fi; \
 	printf "#endif\n" >> $@
 
-$(BUILD_DIR)/target_task_d.h: setup
-	@task_d_page="$(strip $(TASK_D_PAGE))"; \
-	task_d_slot="$(strip $(TASK_D_SLOT))"; \
-	task_d_allowed_start="$(strip $(TASK_D_ALLOWED_START))"; \
-	task_d_allowed_end="$(strip $(TASK_D_ALLOWED_END))"; \
-	task_d_offset="$(strip $(TASK_D_OFFSET))"; \
-	task_d_length="$(strip $(TASK_D_LENGTH))"; \
-	task_d_value="$(strip $(TASK_D_VALUE))"; \
-	task_d_safe_mode_raw="$(strip $(TASK_D_SAFE_MODE))"; \
-	task_d_safe_sp="$(strip $(TASK_D_SAFE_SP))"; \
-	task_d_exec_addr="$(strip $(TASK_D_EXEC_ADDR))"; \
+$(BUILD_DIR)/target_rchk.h: setup
+	@rchk_page="$(strip $(RCHK_PAGE))"; \
+	rchk_slot="$(strip $(RCHK_SLOT))"; \
+	rchk_allowed_start="$(strip $(RCHK_ALLOWED_START))"; \
+	rchk_allowed_end="$(strip $(RCHK_ALLOWED_END))"; \
+	rchk_offset="$(strip $(RCHK_OFFSET))"; \
+	rchk_length="$(strip $(RCHK_LENGTH))"; \
+	rchk_value="$(strip $(RCHK_VALUE))"; \
+	rchk_safe_mode_raw="$(strip $(RCHK_SAFE_MODE))"; \
+	rchk_safe_sp="$(strip $(RCHK_SAFE_SP))"; \
+	rchk_exec_addr="$(strip $(RCHK_EXEC_ADDR))"; \
 	ppi_psr_port="$(strip $(PPI_PSR_PORT))"; \
-	case "$$task_d_safe_mode_raw" in \
-		safe) task_d_safe_mode=1 ;; \
-		unsafe) task_d_safe_mode=0 ;; \
-		*) echo "TASK_D_SAFE_MODE must be 'safe' or 'unsafe' in $(TARGET_MANIFEST)" >&2; exit 1 ;; \
+	case "$$rchk_safe_mode_raw" in \
+		safe) rchk_safe_mode=1 ;; \
+		unsafe) rchk_safe_mode=0 ;; \
+		*) echo "RCHK_SAFE_MODE must be 'safe' or 'unsafe' in $(TARGET_MANIFEST)" >&2; exit 1 ;; \
 	esac; \
-	if [ -z "$$task_d_page" ] || [ -z "$$task_d_slot" ] || [ -z "$$task_d_allowed_start" ] || \
-	   [ -z "$$task_d_allowed_end" ] || [ -z "$$task_d_offset" ] || [ -z "$$task_d_length" ] || \
-	   [ -z "$$task_d_value" ] || [ -z "$$task_d_safe_mode_raw" ] || [ -z "$$task_d_safe_sp" ] || \
-	   [ -z "$$task_d_exec_addr" ] || [ -z "$$ppi_psr_port" ]; then \
-		echo "Missing TASK_D_* or PPI_PSR_PORT in $(TARGET_MANIFEST)" >&2; \
+	if [ -z "$$rchk_page" ] || [ -z "$$rchk_slot" ] || [ -z "$$rchk_allowed_start" ] || \
+	   [ -z "$$rchk_allowed_end" ] || [ -z "$$rchk_offset" ] || [ -z "$$rchk_length" ] || \
+	   [ -z "$$rchk_value" ] || [ -z "$$rchk_safe_mode_raw" ] || [ -z "$$rchk_safe_sp" ] || \
+	   [ -z "$$rchk_exec_addr" ] || [ -z "$$ppi_psr_port" ]; then \
+		echo "Missing RCHK_* or PPI_PSR_PORT in $(TARGET_MANIFEST)" >&2; \
 		exit 1; \
 	fi; \
 	printf "/* Auto-generated from %s */\n" "$(TARGET_MANIFEST)" > $@; \
-	printf "#ifndef TARGET_TASK_D_H\n#define TARGET_TASK_D_H\n\n" >> $@; \
-	printf "#define TASK_D_PAGE %su\n" "$$task_d_page" >> $@; \
-	printf "#define TASK_D_SLOT %su\n" "$$task_d_slot" >> $@; \
-	printf "#define TASK_D_ALLOWED_START %s\n" "$$task_d_allowed_start" >> $@; \
-	printf "#define TASK_D_ALLOWED_END %s\n" "$$task_d_allowed_end" >> $@; \
-	printf "#define TASK_D_OFFSET %s\n" "$$task_d_offset" >> $@; \
-	printf "#define TASK_D_LENGTH %su\n" "$$task_d_length" >> $@; \
-	printf "#define TASK_D_VALUE %s\n" "$$task_d_value" >> $@; \
-	printf "#define TASK_D_SAFE_MODE %su\n" "$$task_d_safe_mode" >> $@; \
-	printf "#define TASK_D_SAFE_SP %s\n" "$$task_d_safe_sp" >> $@; \
-	printf "#define TASK_D_EXEC_ADDR %s\n" "$$task_d_exec_addr" >> $@; \
+	printf "#ifndef TARGET_RCHK_H\n#define TARGET_RCHK_H\n\n" >> $@; \
+	printf "#define RCHK_PAGE %su\n" "$$rchk_page" >> $@; \
+	printf "#define RCHK_SLOT %su\n" "$$rchk_slot" >> $@; \
+	printf "#define RCHK_ALLOWED_START %s\n" "$$rchk_allowed_start" >> $@; \
+	printf "#define RCHK_ALLOWED_END %s\n" "$$rchk_allowed_end" >> $@; \
+	printf "#define RCHK_OFFSET %s\n" "$$rchk_offset" >> $@; \
+	printf "#define RCHK_LENGTH %s\n" "$$rchk_length" >> $@; \
+	printf "#define RCHK_VALUE %s\n" "$$rchk_value" >> $@; \
+	printf "#define RCHK_SAFE_MODE %su\n" "$$rchk_safe_mode" >> $@; \
+	printf "#define RCHK_SAFE_SP %s\n" "$$rchk_safe_sp" >> $@; \
+	printf "#define RCHK_EXEC_ADDR %s\n" "$$rchk_exec_addr" >> $@; \
 	printf "#define PPI_PSR_PORT %s\n\n" "$$ppi_psr_port" >> $@; \
 	printf "#endif\n" >> $@
 
-bootstrap: $(BUILD_DIR)/target_boot.inc $(BUILD_DIR)/target_autostart.h $(BUILD_DIR)/target_task_d.h
+bootstrap: $(BUILD_DIR)/target_boot.inc $(BUILD_DIR)/target_autostart.h $(BUILD_DIR)/target_rchk.h
 ifeq ($(IMAGE_LAYOUT),flash2x64)
 	@echo ">> Building firmware: bootloader+startup (128KB flash image) [TARGET=$(TARGET)]"
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/bootloader.rel $(SRC_DIR)/bootstrap/bootloader.s
@@ -168,7 +168,7 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
 	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
-	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/task_d/*.c; do \
+	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
 		echo "   CC $$file"; \
@@ -200,7 +200,7 @@ else
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
 	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
-	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/task_d/*.c; do \
+	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
 		echo "   CC $$file"; \

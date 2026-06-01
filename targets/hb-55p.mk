@@ -26,15 +26,15 @@ STARTUP_ENTRY = 0x0000
 BOOT_AUTOSTART = xsh:2 b:1
 BOOT_AUTOSTART_STRICT = 1
 
-# Task D memory-switch probe configuration (target-defined, not user-defined).
+# RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
 # HB-55P internal RAM is in slot 0 page 3.
-TASK_D_PAGE = 3
-TASK_D_SLOT = 0
-TASK_D_ALLOWED_START = 0x0100
-TASK_D_ALLOWED_END = 0x3EFF
-TASK_D_OFFSET = 0x0100
-TASK_D_LENGTH = 64
-TASK_D_VALUE = 0xA5
-TASK_D_SAFE_MODE = safe
-TASK_D_SAFE_SP = 0xDFF0
-TASK_D_EXEC_ADDR = 0x8100
+RCHK_PAGE = 3
+RCHK_SLOT = 0
+RCHK_ALLOWED_START = 0x0100
+RCHK_ALLOWED_END = 0x3EFF
+RCHK_OFFSET = 0x0100
+RCHK_LENGTH = 0x0040
+RCHK_VALUE = 0xA5
+RCHK_SAFE_MODE = safe
+RCHK_SAFE_SP = 0xDFF0
+RCHK_EXEC_ADDR = 0x8100

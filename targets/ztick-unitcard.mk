@@ -29,14 +29,14 @@ BOOT_AUTOSTART_STRICT = 1
 # Additional ROM artifacts required by the openMSX machine profile.
 OPENMSX_EXTRA_ROM_FILES = bootloader_slot01.rom startup_slot01.rom
 
-# Task D memory-switch probe configuration (target-defined, not user-defined).
-TASK_D_PAGE = 2
-TASK_D_SLOT = 0
-TASK_D_ALLOWED_START = 0x0000
-TASK_D_ALLOWED_END = 0x0FFF
-TASK_D_OFFSET = 0x0000
-TASK_D_LENGTH = 4096
-TASK_D_VALUE = 0xA5
-TASK_D_SAFE_MODE = safe
-TASK_D_SAFE_SP = 0xF7F0
-TASK_D_EXEC_ADDR = 0xE000
+# RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
+RCHK_PAGE = 2
+RCHK_SLOT = 0
+RCHK_ALLOWED_START = 0x0000
+RCHK_ALLOWED_END = 0x3FFF
+RCHK_OFFSET = 0x0000
+RCHK_LENGTH = 0x4000
+RCHK_VALUE = 0xA5
+RCHK_SAFE_MODE = safe
+RCHK_SAFE_SP = 0xF7F0
+RCHK_EXEC_ADDR = 0xE000
