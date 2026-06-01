@@ -6,6 +6,7 @@
 #include "../lib/ipc_demo.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
+#include "../lib/task.h"
 #include "args_c.h"
 
 #pragma codeseg CODE
@@ -17,12 +18,25 @@ volatile uint16_t counter_c;
 #define MAIN_C_GLYPH_BASE 48u
 #define MAIN_C_LABEL_GLYPH 54u
 #define MAIN_C_GLYPH_COLOR 0xF4u
+static const uint8_t g_task_name_c[] = "c";
+static const uint8_t g_task_c_start_args_usage[] = "even|odd|all";
 static const uint8_t g_label_c[8] = {
     0x3Cu, 0x42u, 0x40u, 0x40u,
     0x40u, 0x42u, 0x3Cu, 0x00u
 };
 static const uint8_t g_hello_c[] = "I'm C. Hello World!";
 static const uint8_t g_goodbye_c[] = "I was C. Gooodbye!";
+
+void main_c(void);
+
+const task_spec_t g_task_spec_c = {
+    g_task_name_c,
+    main_c,
+    TASK_WEIGHT_MIN,
+    g_task_c_start_args_usage,
+    task_c_start_configure,
+    task_c_start_reset
+};
 
 static uint8_t task_c_should_animate(uint16_t value, uint8_t filter)
 {

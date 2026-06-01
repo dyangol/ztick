@@ -7,6 +7,7 @@
 #include "rchk.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
+#include "../lib/task.h"
 #include "args_rchk.h"
 
 #pragma codeseg CODE
@@ -14,6 +15,20 @@
 #define RCHK_CHUNK_MAX 0xFFu
 #define RCHK_PROGRESS_STEP 5u
 #define RCHK_PROGRESS_MIN_LEN 512u
+
+static const uint8_t g_task_name_rchk[] = "rchk";
+static const uint8_t g_rchk_start_args_usage[] = "safe|unsafe";
+
+void main_rchk(void);
+
+const task_spec_t g_task_spec_rchk = {
+    g_task_name_rchk,
+    main_rchk,
+    TASK_WEIGHT_MIN,
+    g_rchk_start_args_usage,
+    rchk_start_configure,
+    rchk_start_reset
+};
 
 static uint16_t rchk_page_base(uint8_t page)
 {

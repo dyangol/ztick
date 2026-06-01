@@ -14,6 +14,7 @@
 #define ZBUS_KERNEL_CTRL_CMD_GET_STATS 0x01u
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_INFO 0x02u
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_LIST 0x03u
+#define ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM_LEGACY 0x04u
 #define ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM 0x07u
 #define ZBUS_KERNEL_CTRL_RSP_STATS 0x81u
 #define ZBUS_KERNEL_CTRL_RSP_TASK_INFO 0x82u
@@ -337,7 +338,8 @@ static void zbus_kernel_handle_control(const zlink_data_frame_t *rx_frame)
             return;
         }
         zbus_kernel_send_task_list_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK);
-    } else if (cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM) {
+    } else if ((cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM)
+        || (cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM_LEGACY)) {
         uint8_t task_id;
         if (rx_frame->len > 2u) {
             zbus_kernel_send_stack_wm_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_BAD_LEN, g_current_task);

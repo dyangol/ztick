@@ -6,6 +6,7 @@
 #include "../lib/ipc_demo.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
+#include "../lib/task.h"
 #include "args_b.h"
 
 #pragma codeseg CODE
@@ -23,8 +24,21 @@ static const uint8_t g_label_b[8] = {
     0x7Cu, 0x42u, 0x42u, 0x7Cu,
     0x42u, 0x42u, 0x7Cu, 0x00u
 };
+static const uint8_t g_task_name_b[] = "b";
+static const uint8_t g_task_b_start_args_usage[] = "fast|normal|slow";
 static const uint8_t g_hello_b[] = "I'm B. Hello World!";
 static const uint8_t g_goodbye_b[] = "I was B. Gooodbye!";
+
+void main_b(void);
+
+const task_spec_t g_task_spec_b = {
+    g_task_name_b,
+    main_b,
+    TASK_WEIGHT_MIN,
+    g_task_b_start_args_usage,
+    task_b_start_configure,
+    task_b_start_reset
+};
 
 void main_b(void)
 {

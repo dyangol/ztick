@@ -1,33 +1,20 @@
 #include <stdint.h>
 
 #include "../common/common.h"
-#include "../bootstrap/rtos.h"
-#include "../task_b/args_b.h"
-#include "../task_c/args_c.h"
-#include "../rchk/args_rchk.h"
 #include "task.h"
 
 #pragma codeseg CODE
 
-extern void main_b(void);
-extern void main_c(void);
-extern void main_rchk(void);
-extern void main_xsh(void);
+extern const task_spec_t g_task_spec_xsh;
+extern const task_spec_t g_task_spec_b;
+extern const task_spec_t g_task_spec_c;
+extern const task_spec_t g_task_spec_rchk;
 
-static const uint8_t g_task_name_xsh[] = "xsh";
-static const uint8_t g_task_name_b[] = "b";
-static const uint8_t g_task_name_c[] = "c";
-static const uint8_t g_task_name_rchk[] = "rchk";
-static const uint8_t g_task_b_start_args_usage[] = "fast|normal|slow";
-static const uint8_t g_task_c_start_args_usage[] = "even|odd|all";
-static const uint8_t g_rchk_start_args_usage[] = "safe|unsafe";
-#define TASK_DEFAULT_WEIGHT_XSH 2u
-
-static const task_spec_t g_task_specs[] = {
-    {g_task_name_xsh, main_xsh, TASK_DEFAULT_WEIGHT_XSH, (const uint8_t *)0, (task_start_args_configure_t)0, (task_start_args_reset_t)0},
-    {g_task_name_b, main_b, TASK_WEIGHT_MIN, g_task_b_start_args_usage, task_b_start_configure, task_b_start_reset},
-    {g_task_name_c, main_c, TASK_WEIGHT_MIN, g_task_c_start_args_usage, task_c_start_configure, task_c_start_reset},
-    {g_task_name_rchk, main_rchk, TASK_WEIGHT_MIN, g_rchk_start_args_usage, rchk_start_configure, rchk_start_reset}
+static const task_spec_t *const g_task_specs[] = {
+    &g_task_spec_xsh,
+    &g_task_spec_b,
+    &g_task_spec_c,
+    &g_task_spec_rchk
 };
 
 static uint8_t task_registry_size(void)
@@ -59,8 +46,8 @@ const task_spec_t *task_registry_find(const uint8_t *name)
     uint8_t count = task_registry_size();
 
     for (i = 0u; i < count; ++i) {
-        if (task_name_equals(name, g_task_specs[i].name) != 0u) {
-            return &g_task_specs[i];
+        if (task_name_equals(name, g_task_specs[i]->name) != 0u) {
+            return g_task_specs[i];
         }
     }
 
@@ -73,7 +60,7 @@ const task_spec_t *task_registry_get(uint8_t index)
         return (const task_spec_t *)0;
     }
 
-    return &g_task_specs[index];
+    return g_task_specs[index];
 }
 
 uint8_t task_registry_count(void)
