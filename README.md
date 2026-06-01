@@ -93,7 +93,7 @@ This new board is based on the SST39SF010A multipurpose CMOS flash memory. It ha
 * From `0x00000` to `0x0FFFF`: `bootloader` selected when `ROM_OE` is asserted
 * From `0x10000` to `0x1FFFF`: `startup`, RTOS and user processes
 
-# `zlink` Protocol
+# `zlink`
 The MSX system has limitations for transferring and receiving I/O data with the Z80. It does not include a hardware interface able to detect incoming data and trigger specialized interrupts. To solve this, we use a link-layer protocol called `zlink`, under `zbus`, to handle RX without `DATA_READY`-type signals.
 
 To detect availability of a new frame versus one already processed, `zlink` uses a sequence number (`SEQ`). It also multiplexes multiple `TTY` channels, specifically from `TTY0` to `TTY15`.
@@ -365,7 +365,7 @@ By default, `setup_openmsx.sh` runs a small diagnostic self-check (`get_task_lis
 ./scripts/setup_openmsx.sh ztick --no-self-check
 ```
 
-# Shell `xsh`
+## Shell `xsh`
 The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_xsh`. At startup, it shows this prompt:
 
 ```text
