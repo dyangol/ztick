@@ -4,7 +4,7 @@
 #include "target_rchk.h"
 #include "../bootstrap/rtos.h"
 #include "../drivers/io.h"
-#include "../lib/mem_probe.h"
+#include "rchk.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
 #include "args_rchk.h"
@@ -12,6 +12,8 @@
 #pragma codeseg CODE
 
 #define RCHK_CHUNK_MAX 0xFFu
+#define RCHK_PROGRESS_STEP 5u
+#define RCHK_PROGRESS_MIN_LEN 512u
 
 static uint16_t rchk_page_base(uint8_t page)
 {
@@ -52,6 +54,24 @@ static void rchk_emit_config_error(const uint8_t *reason)
     pipe_flush();
 }
 
+static void rchk_emit_progress(uint8_t percent)
+{
+    uint8_t line[24];
+    sprint_t out;
+
+    sprint_begin(&out, line, (uint8_t)sizeof(line));
+    (void)sprint_cstr(&out, (const uint8_t *)"rchk PROG ");
+    (void)sprint_u8_dec(&out, percent);
+    (void)sprint_cstr(&out, (const uint8_t *)"%");
+
+    if (sprint_ok(&out) != 0u) {
+        sprint_emit_line(&out);
+    } else {
+        pipe_write_cstr((const uint8_t *)"rchk ERR progress-msg-overflow");
+        pipe_newline();
+    }
+}
+
 void main_rchk(void)
 {
     uint8_t shift = (uint8_t)(RCHK_PAGE * 2u);
@@ -74,6 +94,10 @@ void main_rchk(void)
     uint16_t remaining;
     uint16_t chunk_base;
     uint8_t safe_mode = rchk_safe_mode_resolve((cfg_safe_mode != 0u) ? 1u : 0u);
+    uint8_t progress_enabled;
+    uint8_t next_progress = (uint8_t)RCHK_PROGRESS_STEP;
+    uint8_t total_chunks = 0u;
+    uint8_t done_chunks = 0u;
 
     if (allowed_start_off > allowed_end_off) {
         rchk_emit_config_error((const uint8_t *)"invalid-allowed-range");
@@ -97,8 +121,12 @@ void main_rchk(void)
     range_end = (uint16_t)(range_start + req_len - 1u);
     remaining = req_len;
     chunk_base = range_start;
+    progress_enabled = (req_len >= (uint16_t)RCHK_PROGRESS_MIN_LEN) ? 1u : 0u;
+    if (progress_enabled != 0u) {
+        total_chunks = (uint8_t)((req_len + ((uint16_t)RCHK_CHUNK_MAX - 1u)) / (uint16_t)RCHK_CHUNK_MAX);
+    }
 
-    mem_probe_configure((uint8_t)RCHK_VALUE, safe_mode, (uint16_t)RCHK_SAFE_SP, (uint16_t)RCHK_EXEC_ADDR, (uint8_t)PPI_PSR_PORT);
+    rchk_configure((uint8_t)RCHK_VALUE, safe_mode, (uint16_t)RCHK_SAFE_SP, (uint16_t)RCHK_EXEC_ADDR, (uint8_t)PPI_PSR_PORT);
 
     if (rtos_task_stop_requested() == 0u) {
         g_slot_probe_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
@@ -115,15 +143,26 @@ void main_rchk(void)
         while (remaining > 0u) {
             uint8_t chunk_len = (remaining > (uint16_t)RCHK_CHUNK_MAX) ? (uint8_t)RCHK_CHUNK_MAX : (uint8_t)remaining;
 
-            mem_probe_prepare_chunk(chunk_base, chunk_len);
+            rchk_prepare_chunk(chunk_base, chunk_len);
 
-            mem_probe_run();
+            rchk_run();
             if (g_slot_probe_fail != 0u) {
                 break;
             }
 
             chunk_base = (uint16_t)(chunk_base + (uint16_t)chunk_len);
             remaining = (uint16_t)(remaining - (uint16_t)chunk_len);
+
+            if (progress_enabled != 0u) {
+                uint8_t progress_pct;
+                done_chunks++;
+                progress_pct = (uint8_t)(((uint16_t)done_chunks * 100u) / (uint16_t)total_chunks);
+
+                while ((next_progress <= 100u) && (next_progress <= progress_pct)) {
+                    rchk_emit_progress(next_progress);
+                    next_progress = (uint8_t)(next_progress + (uint8_t)RCHK_PROGRESS_STEP);
+                }
+            }
         }
 
         rchk_emit_result(range_start, range_end, safe_mode);

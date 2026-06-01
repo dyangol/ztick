@@ -13,7 +13,7 @@
 volatile uint16_t counter_c;
 
 #define MAIN_C_COL 0u
-#define MAIN_C_ROW 8u
+#define MAIN_C_ROW 1u
 #define MAIN_C_GLYPH_BASE 48u
 #define MAIN_C_LABEL_GLYPH 54u
 #define MAIN_C_GLYPH_COLOR 0xF4u

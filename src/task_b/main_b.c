@@ -13,7 +13,7 @@
 volatile uint16_t counter_b;
 
 #define MAIN_B_COL 0u
-#define MAIN_B_ROW 4u
+#define MAIN_B_ROW 0u
 #define MAIN_B_GLYPH_BASE 40u
 #define MAIN_B_LABEL_GLYPH 46u
 #define MAIN_B_GLYPH_COLOR 0xF4u

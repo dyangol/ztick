@@ -1,6 +1,6 @@
 #include <stdint.h>
 
-#include "../lib/mem_probe.h"
+#include "rchk.h"
 #include "../lib/args.h"
 #include "args_rchk.h"
 
@@ -17,12 +17,12 @@ static uint8_t rchk_parse_mode(const uint8_t *text, uint8_t *out_mode)
 
     if ((task_start_arg_equals(text, (const uint8_t *)"safe") != 0u)
         || (task_start_arg_equals(text, (const uint8_t *)"mode=safe") != 0u)) {
-        *out_mode = MEM_PROBE_MODE_SAFE;
+        *out_mode = RCHK_MODE_SAFE;
         return 1u;
     }
     if ((task_start_arg_equals(text, (const uint8_t *)"unsafe") != 0u)
         || (task_start_arg_equals(text, (const uint8_t *)"mode=unsafe") != 0u)) {
-        *out_mode = MEM_PROBE_MODE_UNSAFE;
+        *out_mode = RCHK_MODE_UNSAFE;
         return 1u;
     }
 

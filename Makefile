@@ -51,7 +51,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/zlink.rel \
 	$(BUILD_DIR)/activity_indicator.rel \
 	$(BUILD_DIR)/ipc_demo.rel \
-	$(BUILD_DIR)/mem_probe.rel \
+	$(BUILD_DIR)/rchk.rel \
 	$(BUILD_DIR)/task.rel \
 	$(BUILD_DIR)/args_b.rel \
 	$(BUILD_DIR)/args_c.rel \
@@ -65,8 +65,8 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/rtos.rel \
 	$(BUILD_DIR)/vdp_c.rel \
 	$(BUILD_DIR)/io.rel \
-	$(BUILD_DIR)/mem_probe_asm.rel \
-	$(BUILD_DIR)/main_shell.rel \
+	$(BUILD_DIR)/rchk_asm.rel \
+	$(BUILD_DIR)/main_xsh.rel \
 	$(BUILD_DIR)/main_b.rel \
 	$(BUILD_DIR)/main_c.rel \
 	$(BUILD_DIR)/main_rchk.rel
@@ -167,8 +167,8 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
-	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
-	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
+	$(AS) -o $(BUILD_DIR)/rchk_asm.rel $(SRC_DIR)/rchk/rchk.s
+	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/xsh/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
 		echo "   CC $$file"; \
@@ -199,8 +199,8 @@ else
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
 	$(AS) -o $(BUILD_DIR)/ram.rel $(SRC_DIR)/common/ram.s
-	$(AS) -o $(BUILD_DIR)/mem_probe_asm.rel $(SRC_DIR)/lib/mem_probe.s
-	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/task_shell/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
+	$(AS) -o $(BUILD_DIR)/rchk_asm.rel $(SRC_DIR)/rchk/rchk.s
+	@for file in $(SRC_DIR)/bootstrap/*.c $(SRC_DIR)/drivers/*.c $(SRC_DIR)/lib/*.c $(SRC_DIR)/xsh/*.c $(SRC_DIR)/task_b/*.c $(SRC_DIR)/task_c/*.c $(SRC_DIR)/rchk/*.c; do \
 		fname=$$(basename $$file .c); \
 		if [ "$$fname" = "vdp" ]; then out="vdp_c"; else out="$$fname"; fi; \
 		echo "   CC $$file"; \

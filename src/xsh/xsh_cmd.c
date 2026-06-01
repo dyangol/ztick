@@ -4,8 +4,8 @@
 #include "../bootstrap/rtos.h"
 #include "../drivers/zbus.h"
 #include "target_autostart.h"
-#include "ipc_demo.h"
-#include "task.h"
+#include "../lib/ipc_demo.h"
+#include "../lib/task.h"
 #include "xsh.h"
 #include "xsh_cmd.h"
 

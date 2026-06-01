@@ -12,7 +12,7 @@
 extern void main_b(void);
 extern void main_c(void);
 extern void main_rchk(void);
-extern void main_shell(void);
+extern void main_xsh(void);
 
 static const uint8_t g_task_name_xsh[] = "xsh";
 static const uint8_t g_task_name_b[] = "b";
@@ -24,7 +24,7 @@ static const uint8_t g_rchk_start_args_usage[] = "safe|unsafe";
 #define TASK_DEFAULT_WEIGHT_XSH 2u
 
 static const task_spec_t g_task_specs[] = {
-    {g_task_name_xsh, main_shell, TASK_DEFAULT_WEIGHT_XSH, (const uint8_t *)0, (task_start_args_configure_t)0, (task_start_args_reset_t)0},
+    {g_task_name_xsh, main_xsh, TASK_DEFAULT_WEIGHT_XSH, (const uint8_t *)0, (task_start_args_configure_t)0, (task_start_args_reset_t)0},
     {g_task_name_b, main_b, TASK_WEIGHT_MIN, g_task_b_start_args_usage, task_b_start_configure, task_b_start_reset},
     {g_task_name_c, main_c, TASK_WEIGHT_MIN, g_task_c_start_args_usage, task_c_start_configure, task_c_start_reset},
     {g_task_name_rchk, main_rchk, TASK_WEIGHT_MIN, g_rchk_start_args_usage, rchk_start_configure, rchk_start_reset}

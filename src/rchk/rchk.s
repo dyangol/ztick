@@ -1,8 +1,7 @@
-;; src/lib/mem_probe.s
-.module mem_probe
+;; src/rchk/rchk.s
+.module rchk
 
-.globl _mem_probe_run
-.globl _slot_probe_run
+.globl _rchk_run
 
 .globl _ram_exec_run
 .globl _ram_exec_return
@@ -26,19 +25,18 @@
 
 .area _CODE
 
-_mem_probe_run::
-_slot_probe_run::
+_rchk_run::
     ; Copy probe stub to the caller-provided RAM trampoline address and execute it.
-    ld hl, #_mem_probe_exec_stub
+    ld hl, #_rchk_exec_stub
     ld (_g_ram_exec_src), hl
-    ld hl, #(_mem_probe_exec_stub_end - _mem_probe_exec_stub)
+    ld hl, #(_rchk_exec_stub_end - _rchk_exec_stub)
     ld (_g_ram_exec_len), hl
     ld hl, (_g_slot_probe_exec_addr)
     ld (_g_ram_exec_addr), hl
     call _ram_exec_run
     ret
 
-_mem_probe_exec_stub:
+_rchk_exec_stub:
     ; Critical section starts: preserve stack and remap target page via PSR.
     di
     ld (_g_slot_probe_saved_sp), sp
@@ -60,14 +58,14 @@ _mem_probe_exec_stub:
     ld a, (_g_slot_probe_psr_new)
     out (c), a
 
-_mem_probe_loop:
+_rchk_loop:
     ld a, b
     or a
-    jr z, _mem_probe_restore_success
+    jr z, _rchk_restore_success
 
     ld a, e
     or a
-    jr z, _mem_probe_fast
+    jr z, _rchk_fast
 
     ld a, (hl)
     push af
@@ -75,36 +73,36 @@ _mem_probe_loop:
     ld (hl), a
     ld a, (hl)
     cp d
-    jr nz, _mem_probe_restore_fail_safe
+    jr nz, _rchk_restore_fail_safe
     pop af
     ld (hl), a
     inc hl
-    djnz _mem_probe_loop
-    jr _mem_probe_restore_success
+    djnz _rchk_loop
+    jr _rchk_restore_success
 
-_mem_probe_fast:
+_rchk_fast:
     ; Unsafe mode: write/read verify only, no restore of original byte.
     ld a, d
     ld (hl), a
     ld a, (hl)
     cp d
-    jr nz, _mem_probe_restore_fail_unsafe
+    jr nz, _rchk_restore_fail_unsafe
     inc hl
-    djnz _mem_probe_loop
-    jr _mem_probe_restore_success
+    djnz _rchk_loop
+    jr _rchk_restore_success
 
-_mem_probe_restore_fail_safe:
+_rchk_restore_fail_safe:
     ld d, a
     pop af
     ld (hl), a
     ld a, d
 
-_mem_probe_restore_fail_unsafe:
+_rchk_restore_fail_unsafe:
     ld d, a
     ld e, #1
-    jr _mem_probe_restore
+    jr _rchk_restore
 
-_mem_probe_restore:
+_rchk_restore:
     ; Always restore PSR + stack before publishing result and returning.
     pop af
     out (c), a
@@ -113,7 +111,7 @@ _mem_probe_restore:
 
     ld a, e
     or a
-    jr z, _mem_probe_store_success
+    jr z, _rchk_store_success
 
     ld a, #1
     ld (_g_slot_probe_fail), a
@@ -122,16 +120,16 @@ _mem_probe_restore:
     ld (_g_slot_probe_fail_addr), hl
     jp _ram_exec_return
 
-_mem_probe_restore_success:
+_rchk_restore_success:
     xor a
     ld e, a
-    jr _mem_probe_restore
+    jr _rchk_restore
 
-_mem_probe_store_success:
+_rchk_store_success:
     xor a
     ld (_g_slot_probe_fail), a
     ld a, (_g_slot_probe_value)
     ld (_g_slot_probe_read_value), a
     jp _ram_exec_return
 
-_mem_probe_exec_stub_end:
+_rchk_exec_stub_end:

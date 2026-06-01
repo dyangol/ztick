@@ -353,10 +353,10 @@ export OPENMSX_BIN="$HOME/opt/openmsx-21.0/bin/openmsx"
 ./scripts/setup_openmsx.sh --target ztick
 ```
 
-If you want to pause execution at the shell entry point (`_main_shell`), enable the breakpoint explicitly:
+If you want to pause execution at the shell entry point (`_main_xsh`), enable the breakpoint explicitly:
 
 ```bash
-./scripts/setup_openmsx.sh ztick --bp-main-shell
+./scripts/setup_openmsx.sh ztick --bp-xsh
 ```
 
 By default, `setup_openmsx.sh` runs a small diagnostic self-check (`get_task_list`, `get_stack_wm`, and `shell_cmd help`) right after installing `zlink`. If you prefer a clean start:
@@ -366,7 +366,7 @@ By default, `setup_openmsx.sh` runs a small diagnostic self-check (`get_task_lis
 ```
 
 # Shell `xsh`
-The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_shell`. At startup, it shows this prompt:
+The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_xsh`. At startup, it shows this prompt:
 
 ```text
 Z-Tick shell

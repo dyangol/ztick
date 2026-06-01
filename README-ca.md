@@ -93,7 +93,7 @@ Aquesta nova targeta està basada en la memòria flash multi propòsit SST39SF01
 * De `0x00000` a `0x0FFFF` : `bootloader` seleccionat quan el senyal `ROM_OE` és generat
 * De `0x10000` a `0x1FFFF` : `startup`, RTOS i processos d'usuari
 
-# Protocol `zlink`
+# `zlink`
 El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O amb Z80. No incorpora cap interfície de maquinari que permeti detectar l'arribada de dades noves i activar interrupcions especialitzades. Per resoldre-ho, fem servir un protocol de capa d'enllaç anomenat `zlink`, situat sota `zbus`, per resoldre RX sense senyals de tipus `DATA_READY`.
 
 Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink` fa servir número de seqüència (`SEQ`). També permet multiplexar diversos canals tipus `TTY`, en concret del `TTY0` al `TTY15`.
@@ -352,10 +352,10 @@ export OPENMSX_BIN="$HOME/opt/openmsx-21.0/bin/openmsx"
 ./scripts/setup_openmsx.sh --target ztick
 ```
 
-Si vols aturar l'execució al punt d'entrada de shell (`_main_shell`), activa el breakpoint explícitament:
+Si vols aturar l'execució al punt d'entrada de shell (`_main_xsh`), activa el breakpoint explícitament:
 
 ```bash
-./scripts/setup_openmsx.sh ztick --bp-main-shell
+./scripts/setup_openmsx.sh ztick --bp-xsh
 ```
 
 Per defecte, `setup_openmsx.sh` llança un petit _self-check_ de diagnòstic (`get_task_list`, `get_stack_wm` i `shell_cmd help`) just després d'instal·lar `zlink`. Si prefereixes arrencada neta:
@@ -365,7 +365,7 @@ Per defecte, `setup_openmsx.sh` llança un petit _self-check_ de diagnòstic (`g
 ```
 
 ## Shell `xsh`
-La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_shell`. En arrencar, mostra el prompt:
+La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_xsh`. En arrencar, mostra el prompt:
 
 ```text
 Z-Tick shell

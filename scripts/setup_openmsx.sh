@@ -11,12 +11,12 @@ OPENMSX_SYSTEM_DATA_LABEL=""
 
 usage() {
     cat <<EOF
-Usage: $0 [--target <name>] [--watch-io] [--bp-main-shell] [--bp-bootloader] [--self-check]
-       $0 [<target>] [--watch-io] [--bp-main-shell] [--bp-bootloader] [--self-check]
+Usage: $0 [--target <name>] [--watch-io] [--bp-xsh] [--bp-bootloader] [--self-check]
+       $0 [<target>] [--watch-io] [--bp-xsh] [--bp-bootloader] [--self-check]
 
 Default target: ztick
 Default watchpoints: disabled
-Default shell entry breakpoint: disabled (`_main_shell`)
+Default shell entry breakpoint: disabled (`_main_xsh`)
 Default bootloader entry breakpoint: disabled (`0x0000`)
 Default self-check: disabled
 openMSX binary: \$OPENMSX_BIN (default: openmsx)
@@ -26,7 +26,7 @@ EOF
 TARGET="ztick"
 TARGET_SET=0
 WATCH_IO=0
-BP_MAIN_SHELL=0
+BP_XSH=0
 BP_BOOTLOADER=0
 SELF_CHECK=0
 while [ "$#" -gt 0 ]; do
@@ -58,12 +58,12 @@ while [ "$#" -gt 0 ]; do
             WATCH_IO=0
             shift
             ;;
-        --bp-main-shell)
-            BP_MAIN_SHELL=1
+        --bp-xsh)
+            BP_XSH=1
             shift
             ;;
-        --no-bp-main-shell)
-            BP_MAIN_SHELL=0
+        --no-bp-xsh)
+            BP_XSH=0
             shift
             ;;
         --bp-bootloader)
@@ -191,9 +191,9 @@ if [ -f "$OPENMSX_IMGUI_INI" ]; then
     fi
 fi
 
-MAIN_SHELL_ADDR="$(awk '/DEF _main_shell / { print $3; exit }' "$SYMBOL_FILE")"
-if [ -z "$MAIN_SHELL_ADDR" ]; then
-    echo "Symbol _main_shell not found in $SYMBOL_FILE" >&2
+XSH_ADDR="$(awk '/DEF _main_xsh / { print $3; exit }' "$SYMBOL_FILE")"
+if [ -z "$XSH_ADDR" ]; then
+    echo "Symbol _main_xsh not found in $SYMBOL_FILE" >&2
     exit 1
 fi
 
@@ -235,8 +235,8 @@ else
     OPENMSX_ROM_LABEL="    -cart \"$ROM_SOURCE\" \\\\"
 fi
 
-BREAKPOINT_MAIN_SHELL_LABEL="    -command \"debug set_bp $MAIN_SHELL_ADDR\" \\\\"
-OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS=(-command "if {[catch {debug set_bp $MAIN_SHELL_ADDR} _bp_err]} { puts stderr \"WARN main_shell breakpoint ($MAIN_SHELL_ADDR): \$_bp_err\" }")
+BREAKPOINT_XSH_LABEL="    -command \"debug set_bp $XSH_ADDR\" \\\\"
+OPENMSX_BREAKPOINT_XSH_ARGS=(-command "if {[catch {debug set_bp $XSH_ADDR} _bp_err]} { puts stderr \"WARN main_xsh breakpoint ($XSH_ADDR): \$_bp_err\" }")
 BREAKPOINT_BOOTLOADER_LABEL="    -command \"debug set_bp 0x0000\" \\\\"
 OPENMSX_BREAKPOINT_BOOTLOADER_ARGS=(-command "if {[catch {debug set_bp 0x0000} _bp_boot_err]} { puts stderr \"WARN bootloader breakpoint (0x0000): \$_bp_boot_err\" }")
 OPENMSX_SOURCE_ZLINK_ARGS=(-command "if {[catch {source {$ZLINK_TCL}} _zlink_err]} { puts stderr \"WARN zlink script ($ZLINK_TCL): \$_zlink_err\" }")
@@ -253,9 +253,9 @@ if [ "$SELF_CHECK" -ne 0 ]; then
     -command \"zlink_dev::get_stack_wm\" \\
     -command \"zlink_dev::shell_cmd help\" \\"
 fi
-if [ "$BP_MAIN_SHELL" -eq 0 ]; then
-    BREAKPOINT_MAIN_SHELL_LABEL=""
-    OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS=()
+if [ "$BP_XSH" -eq 0 ]; then
+    BREAKPOINT_XSH_LABEL=""
+    OPENMSX_BREAKPOINT_XSH_ARGS=()
 fi
 if [ "$BP_BOOTLOADER" -eq 0 ]; then
     BREAKPOINT_BOOTLOADER_LABEL=""
@@ -281,7 +281,7 @@ $OPENMSX_SYSTEM_DATA_LABEL
 ${OPENMSX_ROM_LABEL}
     -command "debug symbols load $SYMBOL_FILE" \\
 $BREAKPOINT_BOOTLOADER_LABEL
-$BREAKPOINT_MAIN_SHELL_LABEL
+$BREAKPOINT_XSH_LABEL
     -command "source $ZLINK_TCL" \\
     -command "zlink_dev::install $IO_DEFAULT_PORT" \\
 $SELF_CHECK_LABEL
@@ -297,7 +297,7 @@ exec "$OPENMSX_BIN" -machine "$OPENMSX_MACHINE_NAME" -ext debugdevice -ext progr
     "${OPENMSX_ROM_ARGS[@]}" \
     -command "debug symbols load $SYMBOL_FILE" \
     "${OPENMSX_BREAKPOINT_BOOTLOADER_ARGS[@]}" \
-    "${OPENMSX_BREAKPOINT_MAIN_SHELL_ARGS[@]}" \
+    "${OPENMSX_BREAKPOINT_XSH_ARGS[@]}" \
     "${OPENMSX_SOURCE_ZLINK_ARGS[@]}" \
     "${OPENMSX_INSTALL_ZLINK_ARGS[@]}" \
     "${OPENMSX_SELF_CHECK_ARGS[@]}" \
