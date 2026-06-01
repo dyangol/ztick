@@ -27,7 +27,7 @@ static void rchk_emit_result(uint16_t range_start, uint16_t range_end, uint8_t s
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"rchk ");
-    (void)sprint_cstr(&out, (g_slot_probe_fail == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
+    (void)sprint_cstr(&out, (g_rchk_fail == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
     (void)sprint_cstr(&out, (const uint8_t *)" mode=");
     (void)sprint_cstr(&out, (safe_mode != 0u) ? (const uint8_t *)"safe" : (const uint8_t *)"unsafe");
     (void)sprint_cstr(&out, (const uint8_t *)" slot=");
@@ -129,8 +129,8 @@ void main_rchk(void)
     rchk_configure((uint8_t)RCHK_VALUE, safe_mode, (uint16_t)RCHK_SAFE_SP, (uint16_t)RCHK_EXEC_ADDR, (uint8_t)PPI_PSR_PORT);
 
     if (rtos_task_stop_requested() == 0u) {
-        g_slot_probe_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
-        mapped_slot = (uint8_t)((g_slot_probe_psr_old >> shift) & 0x03u);
+        g_rchk_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
+        mapped_slot = (uint8_t)((g_rchk_psr_old >> shift) & 0x03u);
         if (safe_mode == 0u) {
             if (mapped_slot == ((uint8_t)RCHK_SLOT & 0x03u)) {
                 rchk_emit_config_error((const uint8_t *)"unsafe-same-slot");
@@ -138,7 +138,7 @@ void main_rchk(void)
                 return;
             }
         }
-        g_slot_probe_psr_new = (uint8_t)((g_slot_probe_psr_old & (uint8_t)(~mask)) | (uint8_t)(((uint8_t)RCHK_SLOT & 0x03u) << shift));
+        g_rchk_psr_new = (uint8_t)((g_rchk_psr_old & (uint8_t)(~mask)) | (uint8_t)(((uint8_t)RCHK_SLOT & 0x03u) << shift));
 
         while (remaining > 0u) {
             uint8_t chunk_len = (remaining > (uint16_t)RCHK_CHUNK_MAX) ? (uint8_t)RCHK_CHUNK_MAX : (uint8_t)remaining;
@@ -146,7 +146,7 @@ void main_rchk(void)
             rchk_prepare_chunk(chunk_base, chunk_len);
 
             rchk_run();
-            if (g_slot_probe_fail != 0u) {
+            if (g_rchk_fail != 0u) {
                 break;
             }
 

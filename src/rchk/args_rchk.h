@@ -1,5 +1,5 @@
-#ifndef START_ARGS_RCHK_H
-#define START_ARGS_RCHK_H
+#ifndef ARGS_RCHK_H
+#define ARGS_RCHK_H
 
 #include <stdint.h>
 

@@ -352,7 +352,7 @@ export OPENMSX_BIN="$HOME/opt/openmsx-21.0/bin/openmsx"
 ./scripts/setup_openmsx.sh --target ztick
 ```
 
-Si vols aturar l'execució al punt d'entrada de shell (`_main_xsh`), activa el breakpoint explícitament:
+Si vols aturar l'execució al punt d'entrada de xsh (`_main_xsh`), activa el breakpoint explícitament:
 
 ```bash
 ./scripts/setup_openmsx.sh ztick --bp-xsh
@@ -368,7 +368,7 @@ Per defecte, `setup_openmsx.sh` llança un petit _self-check_ de diagnòstic (`g
 La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_xsh`. En arrencar, mostra el prompt:
 
 ```text
-Z-Tick shell
+Z-Tick xsh
 ztick> 
 ```
 

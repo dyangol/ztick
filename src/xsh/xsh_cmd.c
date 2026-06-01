@@ -22,35 +22,35 @@ static const uint8_t g_boot_cfg_line_1[] = "cfg task_heap=" XSH_CMD_STR(TASK_HEA
 static const uint8_t g_boot_cfg_line_2[] = "cfg zbus tty=" XSH_CMD_STR(ZBUS_MAX_TTY) " rx=" XSH_CMD_STR(ZBUS_BUFFER_SIZE) " txq=" XSH_CMD_STR(ZBUS_TX_QUEUE_SIZE) "\n";
 static const uint8_t g_boot_cfg_line_3[] = "cfg ipc sem_queue=1\n";
 static const uint8_t g_boot_cfg_line_4[] = "cfg autostart=" TARGET_AUTOSTART_RAW "\n";
-static const uint8_t g_shell_banner[] = "Z-Tick shell\n";
-static const uint8_t g_shell_prompt[] = "ztick> ";
-static const uint8_t g_shell_state_unused[] = "unused";
-static const uint8_t g_shell_state_ready[] = "ready";
-static const uint8_t g_shell_state_wait_sem[] = "wait_sem";
-static const uint8_t g_shell_state_wait_q_send[] = "wait_q_send";
-static const uint8_t g_shell_state_wait_q_recv[] = "wait_q_recv";
-static const uint8_t g_shell_txt_unknown[] = "unknown command";
-static const uint8_t g_shell_txt_bad_task[] = "undefined task id";
-static const uint8_t g_shell_usage_help[] = "help";
-static const uint8_t g_shell_usage_cfg[] = "cfg";
-static const uint8_t g_shell_usage_tasks[] = "usage: tasks [task_id]";
-static const uint8_t g_shell_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [args...]";
-static const uint8_t g_shell_usage_stop[] = "usage: stop <task_name>";
-static const uint8_t g_shell_usage_weight[] = "usage: weight <task_id> <1..3>";
-static const uint8_t g_shell_usage_heap[] = "usage: heap [task_id]";
-static const uint8_t g_shell_usage_stack[] = "usage: stack [task_id]";
-static const uint8_t g_shell_usage_stats[] = "stats";
-static const uint8_t g_shell_cmd_help[] = "help";
-static const uint8_t g_shell_cmd_cfg[] = "cfg";
-static const uint8_t g_shell_cmd_tasks[] = "tasks";
-static const uint8_t g_shell_cmd_start[] = "start";
-static const uint8_t g_shell_cmd_stop[] = "stop";
-static const uint8_t g_shell_cmd_weight[] = "weight";
-static const uint8_t g_shell_cmd_heap[] = "heap";
-static const uint8_t g_shell_cmd_stack[] = "stack";
-static const uint8_t g_shell_cmd_stats[] = "stats";
+static const uint8_t g_xsh_cmd_banner[] = "Z-Tick xsh\n";
+static const uint8_t g_xsh_cmd_prompt[] = "ztick> ";
+static const uint8_t g_xsh_cmd_state_unused[] = "unused";
+static const uint8_t g_xsh_cmd_state_ready[] = "ready";
+static const uint8_t g_xsh_cmd_state_wait_sem[] = "wait_sem";
+static const uint8_t g_xsh_cmd_state_wait_q_send[] = "wait_q_send";
+static const uint8_t g_xsh_cmd_state_wait_q_recv[] = "wait_q_recv";
+static const uint8_t g_xsh_cmd_txt_unknown[] = "unknown command";
+static const uint8_t g_xsh_cmd_txt_bad_task[] = "undefined task id";
+static const uint8_t g_xsh_cmd_usage_help[] = "help";
+static const uint8_t g_xsh_cmd_usage_cfg[] = "cfg";
+static const uint8_t g_xsh_cmd_usage_tasks[] = "usage: tasks [task_id]";
+static const uint8_t g_xsh_cmd_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [args...]";
+static const uint8_t g_xsh_cmd_usage_stop[] = "usage: stop <task_name>";
+static const uint8_t g_xsh_cmd_usage_weight[] = "usage: weight <task_id> <1..3>";
+static const uint8_t g_xsh_cmd_usage_heap[] = "usage: heap [task_id]";
+static const uint8_t g_xsh_cmd_usage_stack[] = "usage: stack [task_id]";
+static const uint8_t g_xsh_cmd_usage_stats[] = "stats";
+static const uint8_t g_xsh_cmd_name_help[] = "help";
+static const uint8_t g_xsh_cmd_name_cfg[] = "cfg";
+static const uint8_t g_xsh_cmd_name_tasks[] = "tasks";
+static const uint8_t g_xsh_cmd_name_start[] = "start";
+static const uint8_t g_xsh_cmd_name_stop[] = "stop";
+static const uint8_t g_xsh_cmd_name_weight[] = "weight";
+static const uint8_t g_xsh_cmd_name_heap[] = "heap";
+static const uint8_t g_xsh_cmd_name_stack[] = "stack";
+static const uint8_t g_xsh_cmd_name_stats[] = "stats";
 
-static void shell_write_task_tty(xsh_t *sh, uint8_t slot)
+static void xsh_cmd_write_task_tty(xsh_t *sh, uint8_t slot)
 {
     uint8_t tty_id;
 
@@ -62,22 +62,22 @@ static void shell_write_task_tty(xsh_t *sh, uint8_t slot)
     }
 }
 
-static const uint8_t *shell_task_state_name(uint8_t state)
+static const uint8_t *xsh_cmd_task_state_name(uint8_t state)
 {
     if (state == TASK_READY) {
-        return g_shell_state_ready;
+        return g_xsh_cmd_state_ready;
     }
     if (state == TASK_UNUSED) {
-        return g_shell_state_unused;
+        return g_xsh_cmd_state_unused;
     }
     if (state == TASK_WAIT_SEM) {
-        return g_shell_state_wait_sem;
+        return g_xsh_cmd_state_wait_sem;
     }
     if (state == TASK_WAIT_Q_SEND) {
-        return g_shell_state_wait_q_send;
+        return g_xsh_cmd_state_wait_q_send;
     }
     if (state == TASK_WAIT_Q_RECV) {
-        return g_shell_state_wait_q_recv;
+        return g_xsh_cmd_state_wait_q_recv;
     }
     return (const uint8_t *)"other";
 }
@@ -103,14 +103,14 @@ static uint8_t line_append_u16_hex(uint8_t *buf, uint8_t max, uint8_t *io_len, u
     return 1u;
 }
 
-static void shell_emit_buffer_line(xsh_t *sh, uint8_t *line, uint8_t len)
+static void xsh_cmd_emit_buffer_line(xsh_t *sh, uint8_t *line, uint8_t len)
 {
     line[len] = (uint8_t)'\r';
     line[(uint8_t)(len + 1u)] = (uint8_t)'\n';
     xsh_write_bytes(sh, line, (uint8_t)(len + 2u));
 }
 
-static void shell_emit_line(xsh_t *sh, const uint8_t *text)
+static void xsh_cmd_emit_line(xsh_t *sh, const uint8_t *text)
 {
     uint8_t line[ZBUS_FRAME_MAX_LEN];
     uint8_t len = 0u;
@@ -118,20 +118,20 @@ static void shell_emit_line(xsh_t *sh, const uint8_t *text)
 
     ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, text);
     if (ok != 0u) {
-        shell_emit_buffer_line(sh, line, len);
+        xsh_cmd_emit_buffer_line(sh, line, len);
     } else {
         xsh_write_cstr(sh, text);
         xsh_newline(sh);
     }
 }
 
-static void shell_emit_usage(xsh_t *sh, const uint8_t *usage)
+static void xsh_cmd_emit_usage(xsh_t *sh, const uint8_t *usage)
 {
     xsh_write_cstr(sh, usage);
     xsh_newline(sh);
 }
 
-static void shell_emit_task_name_choices(xsh_t *sh)
+static void xsh_cmd_emit_task_name_choices(xsh_t *sh)
 {
     uint8_t i;
     uint8_t count = task_registry_count();
@@ -151,22 +151,22 @@ static void shell_emit_task_name_choices(xsh_t *sh)
     }
 }
 
-static void shell_emit_start_usage(xsh_t *sh)
+static void xsh_cmd_emit_start_usage(xsh_t *sh)
 {
     xsh_write_cstr(sh, (const uint8_t *)"usage: start ");
-    shell_emit_task_name_choices(sh);
+    xsh_cmd_emit_task_name_choices(sh);
     xsh_write_cstr(sh, (const uint8_t *)" [weight|w=<1..3>] [args...]");
     xsh_newline(sh);
 }
 
-static void shell_emit_start_usage_for_spec(xsh_t *sh, const task_spec_t *spec)
+static void xsh_cmd_emit_start_usage_for_spec(xsh_t *sh, const task_spec_t *spec)
 {
     if (sh == (xsh_t *)0) {
         return;
     }
 
     if ((spec == (const task_spec_t *)0) || (spec->name == (const uint8_t *)0)) {
-        shell_emit_start_usage(sh);
+        xsh_cmd_emit_start_usage(sh);
         return;
     }
 
@@ -183,10 +183,10 @@ static void shell_emit_start_usage_for_spec(xsh_t *sh, const task_spec_t *spec)
     xsh_newline(sh);
 }
 
-static void shell_emit_stop_usage(xsh_t *sh)
+static void xsh_cmd_emit_stop_usage(xsh_t *sh)
 {
     xsh_write_cstr(sh, (const uint8_t *)"usage: stop ");
-    shell_emit_task_name_choices(sh);
+    xsh_cmd_emit_task_name_choices(sh);
     xsh_newline(sh);
 }
 
@@ -194,7 +194,7 @@ static uint8_t cmd_help(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     UNUSED(argc);
     UNUSED(argv);
-    shell_emit_line(sh, (const uint8_t *)"commands: help cfg tasks start stop weight heap stack stats");
+    xsh_cmd_emit_line(sh, (const uint8_t *)"commands: help cfg tasks start stop weight heap stack stats");
     return 1u;
 }
 
@@ -210,7 +210,7 @@ static uint8_t cmd_cfg(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     return 1u;
 }
 
-static uint8_t shell_name_len(const uint8_t *name)
+static uint8_t xsh_cmd_name_len(const uint8_t *name)
 {
     uint8_t len = 0u;
     if (name == (const uint8_t *)0) {
@@ -222,10 +222,10 @@ static uint8_t shell_name_len(const uint8_t *name)
     return len;
 }
 
-static uint8_t shell_find_task_by_name(const uint8_t *name, uint8_t *out_slot)
+static uint8_t xsh_cmd_find_task_by_name(const uint8_t *name, uint8_t *out_slot)
 {
     uint8_t slot;
-    uint8_t name_len = shell_name_len(name);
+    uint8_t name_len = xsh_cmd_name_len(name);
 
     if ((name_len == 0u) || (out_slot == (uint8_t *)0)) {
         return 0u;
@@ -255,7 +255,7 @@ static uint8_t shell_find_task_by_name(const uint8_t *name, uint8_t *out_slot)
     return 0u;
 }
 
-static uint8_t shell_parse_weight(const uint8_t *text, uint8_t *out_weight)
+static uint8_t xsh_cmd_parse_weight(const uint8_t *text, uint8_t *out_weight)
 {
     uint8_t weight;
 
@@ -270,7 +270,7 @@ static uint8_t shell_parse_weight(const uint8_t *text, uint8_t *out_weight)
     return 1u;
 }
 
-static uint8_t shell_parse_weight_assignment(const uint8_t *text, uint8_t *out_weight)
+static uint8_t xsh_cmd_parse_weight_assignment(const uint8_t *text, uint8_t *out_weight)
 {
     if ((text == (const uint8_t *)0) || (out_weight == (uint8_t *)0)) {
         return 0u;
@@ -280,10 +280,10 @@ static uint8_t shell_parse_weight_assignment(const uint8_t *text, uint8_t *out_w
         return 0u;
     }
 
-    return shell_parse_weight(&text[2], out_weight);
+    return xsh_cmd_parse_weight(&text[2], out_weight);
 }
 
-static uint8_t shell_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t weight)
+static uint8_t xsh_cmd_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t weight)
 {
     uint8_t slot;
 
@@ -291,7 +291,7 @@ static uint8_t shell_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t
         return 0u;
     }
 
-    if (shell_find_task_by_name(spec->name, &slot) != 0u) {
+    if (xsh_cmd_find_task_by_name(spec->name, &slot) != 0u) {
         xsh_write_cstr(sh, (const uint8_t *)"already running task_id=");
         xsh_write_u8_dec(sh, slot);
         xsh_newline(sh);
@@ -308,7 +308,7 @@ static uint8_t shell_start_task_spec(xsh_t *sh, const task_spec_t *spec, uint8_t
     xsh_write_cstr(sh, spec->name);
     xsh_write_cstr(sh, (const uint8_t *)" task_id=");
     xsh_write_u8_dec(sh, slot);
-    shell_write_task_tty(sh, slot);
+    xsh_cmd_write_task_tty(sh, slot);
     xsh_write_cstr(sh, (const uint8_t *)" weight=");
     xsh_write_u8_dec(sh, weight);
     xsh_newline(sh);
@@ -326,13 +326,13 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     uint8_t running_slot;
 
     if ((argc < 2u) || (argc > XSH_ARGV_MAX)) {
-        shell_emit_start_usage(sh);
+        xsh_cmd_emit_start_usage(sh);
         return 0u;
     }
 
     spec = task_registry_find(argv[1]);
     if (spec == (const task_spec_t *)0) {
-        shell_emit_start_usage(sh);
+        xsh_cmd_emit_start_usage(sh);
         return 0u;
     }
 
@@ -341,13 +341,13 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     for (idx = 2u; idx < argc; ++idx) {
         uint8_t parsed_weight;
 
-        if ((idx == 2u) && (shell_parse_weight(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
+        if ((idx == 2u) && (xsh_cmd_parse_weight(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
             weight = parsed_weight;
             has_weight = 1u;
             continue;
         }
 
-        if ((shell_parse_weight_assignment(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
+        if ((xsh_cmd_parse_weight_assignment(argv[idx], &parsed_weight) != 0u) && (has_weight == 0u)) {
             weight = parsed_weight;
             has_weight = 1u;
             continue;
@@ -357,13 +357,13 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
             task_argv[task_argc] = idx;
             task_argc++;
         } else {
-            shell_emit_start_usage_for_spec(sh, spec);
+            xsh_cmd_emit_start_usage_for_spec(sh, spec);
             return 0u;
         }
     }
 
-    if (shell_find_task_by_name(spec->name, &running_slot) != 0u) {
-        return shell_start_task_spec(sh, spec, weight);
+    if (xsh_cmd_find_task_by_name(spec->name, &running_slot) != 0u) {
+        return xsh_cmd_start_task_spec(sh, spec, weight);
     }
 
     if (task_argc != 0u) {
@@ -376,16 +376,16 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 
         if (task_registry_start_configure(spec, task_argc, task_argv_ptrs) == 0u) {
             task_registry_start_reset(spec);
-            shell_emit_start_usage_for_spec(sh, spec);
+            xsh_cmd_emit_start_usage_for_spec(sh, spec);
             return 0u;
         }
     } else if (task_registry_start_configure(spec, 0u, (uint8_t **)0) == 0u) {
         task_registry_start_reset(spec);
-        shell_emit_start_usage_for_spec(sh, spec);
+        xsh_cmd_emit_start_usage_for_spec(sh, spec);
         return 0u;
     }
 
-    if (shell_start_task_spec(sh, spec, weight) == 0u) {
+    if (xsh_cmd_start_task_spec(sh, spec, weight) == 0u) {
         task_registry_start_reset(spec);
         return 0u;
     }
@@ -393,7 +393,7 @@ static uint8_t cmd_start(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     return 1u;
 }
 
-static uint8_t shell_stop_task_spec(xsh_t *sh, const task_spec_t *spec)
+static uint8_t xsh_cmd_stop_task_spec(xsh_t *sh, const task_spec_t *spec)
 {
     uint8_t slot;
 
@@ -401,7 +401,7 @@ static uint8_t shell_stop_task_spec(xsh_t *sh, const task_spec_t *spec)
         return 0u;
     }
 
-    if (shell_find_task_by_name(spec->name, &slot) == 0u) {
+    if (xsh_cmd_find_task_by_name(spec->name, &slot) == 0u) {
         xsh_write_cstr(sh, (const uint8_t *)"not running");
         xsh_newline(sh);
         return 0u;
@@ -426,16 +426,16 @@ static uint8_t cmd_stop(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     const task_spec_t *spec;
 
     if (argc != 2u) {
-        shell_emit_stop_usage(sh);
+        xsh_cmd_emit_stop_usage(sh);
         return 0u;
     }
 
     spec = task_registry_find(argv[1]);
     if (spec != (const task_spec_t *)0) {
-        return shell_stop_task_spec(sh, spec);
+        return xsh_cmd_stop_task_spec(sh, spec);
     }
 
-    shell_emit_stop_usage(sh);
+    xsh_cmd_emit_stop_usage(sh);
     return 0u;
 }
 
@@ -445,17 +445,17 @@ static uint8_t cmd_weight(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     uint8_t weight;
 
     if (argc != 3u) {
-        shell_emit_usage(sh, g_shell_usage_weight);
+        xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_weight);
         return 0u;
     }
 
-    if ((xsh_parse_u8(argv[1], &task_id) == 0u) || (shell_parse_weight(argv[2], &weight) == 0u)) {
-        shell_emit_usage(sh, g_shell_usage_weight);
+    if ((xsh_parse_u8(argv[1], &task_id) == 0u) || (xsh_cmd_parse_weight(argv[2], &weight) == 0u)) {
+        xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_weight);
         return 0u;
     }
 
     if (rtos_task_set_weight(task_id, weight) == 0u) {
-        xsh_write_cstr(sh, g_shell_txt_bad_task);
+        xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
         xsh_newline(sh);
         return 0u;
     }
@@ -468,7 +468,7 @@ static uint8_t cmd_weight(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     return 1u;
 }
 
-static uint8_t shell_task_name_len(uint8_t slot)
+static uint8_t xsh_cmd_task_name_len(uint8_t slot)
 {
     uint8_t name_len = g_tasks[slot].name_len;
     if (name_len > TASK_NAME_MAX) {
@@ -477,13 +477,13 @@ static uint8_t shell_task_name_len(uint8_t slot)
     return name_len;
 }
 
-static uint8_t shell_emit_task_name_line(xsh_t *sh, uint8_t slot)
+static uint8_t xsh_cmd_emit_task_name_line(xsh_t *sh, uint8_t slot)
 {
     uint8_t i;
     uint8_t line[ZBUS_FRAME_MAX_LEN];
     uint8_t len = 0u;
     uint8_t ok = 1u;
-    uint8_t name_len = shell_task_name_len(slot);
+    uint8_t name_len = xsh_cmd_task_name_len(slot);
 
     ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, (const uint8_t *)"task ");
     if (ok != 0u) {
@@ -508,13 +508,13 @@ static uint8_t shell_emit_task_name_line(xsh_t *sh, uint8_t slot)
     }
 
     if (ok != 0u) {
-        shell_emit_buffer_line(sh, line, len);
+        xsh_cmd_emit_buffer_line(sh, line, len);
         return 1u;
     }
 
     xsh_write_cstr(sh, (const uint8_t *)"task ");
     xsh_write_u8_dec(sh, slot);
-    shell_write_task_tty(sh, slot);
+    xsh_cmd_write_task_tty(sh, slot);
     xsh_write_cstr(sh, (const uint8_t *)" name=");
     if (name_len == 0u) {
         xsh_write_cstr(sh, (const uint8_t *)"-");
@@ -535,13 +535,13 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 
     if (argc == 2u) {
         if (xsh_parse_u8(argv[1], &task_filter) == 0u) {
-            xsh_write_cstr(sh, g_shell_usage_tasks);
+            xsh_write_cstr(sh, g_xsh_cmd_usage_tasks);
             xsh_newline(sh);
             return 0u;
         }
         use_filter = 1u;
     } else if (argc > 2u) {
-        xsh_write_cstr(sh, g_shell_usage_tasks);
+        xsh_write_cstr(sh, g_xsh_cmd_usage_tasks);
         xsh_newline(sh);
         return 0u;
     }
@@ -563,29 +563,29 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
             ok = xsh_line_append_u8_dec(line, (uint8_t)XSH_CMD_LINE_CAP, &len, active);
         }
         if (ok != 0u) {
-            shell_emit_buffer_line(sh, line, len);
+            xsh_cmd_emit_buffer_line(sh, line, len);
         } else {
-            shell_emit_line(sh, (const uint8_t *)"tasks");
+            xsh_cmd_emit_line(sh, (const uint8_t *)"tasks");
         }
 
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state == TASK_UNUSED) {
                 continue;
             }
-            shell_emit_task_name_line(sh, slot);
+            xsh_cmd_emit_task_name_line(sh, slot);
         }
 
         return 1u;
     }
 
     if (task_filter >= MAX_TASKS) {
-        xsh_write_cstr(sh, g_shell_txt_bad_task);
+        xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
         xsh_newline(sh);
         return 0u;
     }
 
     if (g_tasks[task_filter].state == TASK_UNUSED) {
-        xsh_write_cstr(sh, g_shell_txt_bad_task);
+        xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
         xsh_newline(sh);
         return 0u;
     }
@@ -596,7 +596,7 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         uint8_t len = 0u;
         uint8_t ok = 1u;
         uint8_t state = g_tasks[slot].state;
-        uint8_t name_len = shell_task_name_len(slot);
+        uint8_t name_len = xsh_cmd_task_name_len(slot);
 
         if ((use_filter != 0u) && (slot != task_filter)) {
             continue;
@@ -614,7 +614,7 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
             ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, (const uint8_t *)" state=");
         }
         if (ok != 0u) {
-            ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, shell_task_state_name(state));
+            ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, xsh_cmd_task_state_name(state));
         }
         if (ok != 0u) {
             ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, (const uint8_t *)" tty=");
@@ -665,15 +665,15 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         }
 
         if (ok != 0u) {
-            shell_emit_buffer_line(sh, line, len);
+            xsh_cmd_emit_buffer_line(sh, line, len);
             continue;
         }
 
         xsh_write_cstr(sh, (const uint8_t *)"task ");
         xsh_write_u8_dec(sh, slot);
         xsh_write_cstr(sh, (const uint8_t *)" state=");
-        xsh_write_cstr(sh, shell_task_state_name(state));
-        shell_write_task_tty(sh, slot);
+        xsh_write_cstr(sh, xsh_cmd_task_state_name(state));
+        xsh_cmd_write_task_tty(sh, slot);
         xsh_write_cstr(sh, (const uint8_t *)" w=");
         xsh_write_u8_dec(sh, g_tasks[slot].weight);
         xsh_write_cstr(sh, (const uint8_t *)" b=");
@@ -696,12 +696,12 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     return 1u;
 }
 
-static void shell_emit_heap_one(xsh_t *sh, uint8_t slot)
+static void xsh_cmd_emit_heap_one(xsh_t *sh, uint8_t slot)
 {
     heap_stats_t heap_stats;
 
     if (rtos_heap_stats(slot, &heap_stats) == 0u) {
-        xsh_write_cstr(sh, g_shell_txt_bad_task);
+        xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
         xsh_newline(sh);
         return;
     }
@@ -723,7 +723,7 @@ static uint8_t cmd_heap(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         uint8_t slot;
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state != TASK_UNUSED) {
-                shell_emit_heap_one(sh, slot);
+                xsh_cmd_emit_heap_one(sh, slot);
             }
         }
         return 1u;
@@ -732,18 +732,18 @@ static uint8_t cmd_heap(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     if (argc == 2u) {
         uint8_t slot_id;
         if (xsh_parse_u8(argv[1], &slot_id) == 0u) {
-            shell_emit_usage(sh, g_shell_usage_heap);
+            xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_heap);
             return 0u;
         }
-        shell_emit_heap_one(sh, slot_id);
+        xsh_cmd_emit_heap_one(sh, slot_id);
         return 1u;
     }
 
-    shell_emit_usage(sh, g_shell_usage_heap);
+    xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_heap);
     return 0u;
 }
 
-static void shell_emit_stack_one(xsh_t *sh, uint8_t slot)
+static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
 {
     uint8_t line[ZBUS_FRAME_MAX_LEN];
     uint8_t len = 0u;
@@ -754,7 +754,7 @@ static void shell_emit_stack_one(xsh_t *sh, uint8_t slot)
     uint8_t ok;
 
     if (rtos_stack_watermark(slot, &peak_used, &current_used, &stack_size) == 0u) {
-        xsh_write_cstr(sh, g_shell_txt_bad_task);
+        xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
         xsh_newline(sh);
         return;
     }
@@ -791,7 +791,7 @@ static void shell_emit_stack_one(xsh_t *sh, uint8_t slot)
     }
 
     if (ok != 0u) {
-        shell_emit_buffer_line(sh, line, len);
+        xsh_cmd_emit_buffer_line(sh, line, len);
         return;
     }
 
@@ -814,7 +814,7 @@ static uint8_t cmd_stack(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         uint8_t slot;
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state != TASK_UNUSED) {
-                shell_emit_stack_one(sh, slot);
+                xsh_cmd_emit_stack_one(sh, slot);
             }
         }
         return 1u;
@@ -823,14 +823,14 @@ static uint8_t cmd_stack(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     if (argc == 2u) {
         uint8_t slot_id;
         if (xsh_parse_u8(argv[1], &slot_id) == 0u) {
-            shell_emit_usage(sh, g_shell_usage_stack);
+            xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_stack);
             return 0u;
         }
-        shell_emit_stack_one(sh, slot_id);
+        xsh_cmd_emit_stack_one(sh, slot_id);
         return 1u;
     }
 
-    shell_emit_usage(sh, g_shell_usage_stack);
+    xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_stack);
     return 0u;
 }
 
@@ -866,7 +866,7 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         ok = xsh_line_append_u16_dec(line, (uint8_t)XSH_CMD_LINE_CAP, &len, stats.attach_fail);
     }
     if (ok != 0u) {
-        shell_emit_buffer_line(sh, line, len);
+        xsh_cmd_emit_buffer_line(sh, line, len);
     } else {
         xsh_write_cstr(sh, (const uint8_t *)"zbus tx_drop=");
         xsh_write_u16_dec(sh, stats.tx_drop);
@@ -907,7 +907,7 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         ok = xsh_line_append_u16_dec(line, (uint8_t)XSH_CMD_LINE_CAP, &len, stats.zlink_rx_len_err);
     }
     if (ok != 0u) {
-        shell_emit_buffer_line(sh, line, len);
+        xsh_cmd_emit_buffer_line(sh, line, len);
     } else {
         xsh_write_cstr(sh, (const uint8_t *)"zlink ok=");
         xsh_write_u16_dec(sh, stats.zlink_rx_frames_ok);
@@ -934,27 +934,27 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 }
 
 static const xsh_cmd_t g_xsh_cmds[] = {
-    {g_shell_cmd_help, g_shell_usage_help, 0u, 0u, cmd_help},
-    {g_shell_cmd_cfg, g_shell_usage_cfg, 0u, 0u, cmd_cfg},
-    {g_shell_cmd_tasks, g_shell_usage_tasks, 0u, 1u, cmd_tasks},
-    {g_shell_cmd_start, g_shell_usage_start, 1u, (uint8_t)(XSH_ARGV_MAX - 1u), cmd_start},
-    {g_shell_cmd_stop, g_shell_usage_stop, 1u, 1u, cmd_stop},
-    {g_shell_cmd_weight, g_shell_usage_weight, 2u, 2u, cmd_weight},
-    {g_shell_cmd_heap, g_shell_usage_heap, 0u, 1u, cmd_heap},
-    {g_shell_cmd_stack, g_shell_usage_stack, 0u, 1u, cmd_stack},
-    {g_shell_cmd_stats, g_shell_usage_stats, 0u, 0u, cmd_stats}
+    {g_xsh_cmd_name_help, g_xsh_cmd_usage_help, 0u, 0u, cmd_help},
+    {g_xsh_cmd_name_cfg, g_xsh_cmd_usage_cfg, 0u, 0u, cmd_cfg},
+    {g_xsh_cmd_name_tasks, g_xsh_cmd_usage_tasks, 0u, 1u, cmd_tasks},
+    {g_xsh_cmd_name_start, g_xsh_cmd_usage_start, 1u, (uint8_t)(XSH_ARGV_MAX - 1u), cmd_start},
+    {g_xsh_cmd_name_stop, g_xsh_cmd_usage_stop, 1u, 1u, cmd_stop},
+    {g_xsh_cmd_name_weight, g_xsh_cmd_usage_weight, 2u, 2u, cmd_weight},
+    {g_xsh_cmd_name_heap, g_xsh_cmd_usage_heap, 0u, 1u, cmd_heap},
+    {g_xsh_cmd_name_stack, g_xsh_cmd_usage_stack, 0u, 1u, cmd_stack},
+    {g_xsh_cmd_name_stats, g_xsh_cmd_usage_stats, 0u, 0u, cmd_stats}
 };
 
-void xsh_cmd_init_shell(xsh_t *sh)
+void xsh_cmd_init_xsh(xsh_t *sh)
 {
     if (sh == (xsh_t *)0) {
         return;
     }
 
     xsh_init(sh, g_xsh_cmds, (uint8_t)ARRAY_LEN(g_xsh_cmds));
-    xsh_set_banner(sh, g_shell_banner);
-    xsh_set_prompt(sh, g_shell_prompt);
-    xsh_set_unknown_text(sh, g_shell_txt_unknown);
+    xsh_set_banner(sh, g_xsh_cmd_banner);
+    xsh_set_prompt(sh, g_xsh_cmd_prompt);
+    xsh_set_unknown_text(sh, g_xsh_cmd_txt_unknown);
 }
 
 void xsh_cmd_boot_cfg_emit_once(void)

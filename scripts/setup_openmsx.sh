@@ -16,7 +16,7 @@ Usage: $0 [--target <name>] [--watch-io] [--bp-xsh] [--bp-bootloader] [--self-ch
 
 Default target: ztick
 Default watchpoints: disabled
-Default shell entry breakpoint: disabled (`_main_xsh`)
+Default xsh entry breakpoint: disabled (`_main_xsh`)
 Default bootloader entry breakpoint: disabled (`0x0000`)
 Default self-check: disabled
 openMSX binary: \$OPENMSX_BIN (default: openmsx)
