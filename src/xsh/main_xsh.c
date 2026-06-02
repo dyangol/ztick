@@ -14,11 +14,13 @@
 volatile uint16_t counter_a;
 
 static xsh_t g_xsh;
+/* XSH is the interactive shell task: it has a fixed identity and no start-time knobs. */
 static const uint8_t g_task_name_xsh[] = "xsh";
 static const uint8_t g_goodbye_xsh[] = "I was XSH. Goodbye!";
 
 void main_xsh(void);
 
+/* Task spec: interactive shell with no start-time arguments or callbacks. */
 const task_spec_t g_task_spec_xsh = {
     g_task_name_xsh,
     main_xsh,

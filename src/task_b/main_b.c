@@ -20,6 +20,7 @@ volatile uint16_t counter_b;
 #define MAIN_B_GLYPH_COLOR 0xF4u
 #define MAIN_B_ANIM_MASK_DEFAULT 0x003Fu
 
+/* Task B is a demo worker with a tiny start-time speed selector. */
 static const uint8_t g_label_b[8] = {
     0x7Cu, 0x42u, 0x42u, 0x7Cu,
     0x42u, 0x42u, 0x7Cu, 0x00u
@@ -31,6 +32,7 @@ static const uint8_t g_goodbye_b[] = "I was B. Gooodbye!";
 
 void main_b(void);
 
+/* Task spec: demo worker with a speed selector and matching callbacks. */
 const task_spec_t g_task_spec_b = {
     g_task_name_b,
     main_b,

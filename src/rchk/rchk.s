@@ -59,6 +59,7 @@ _rchk_exec_stub:
     out (c), a
 
 _rchk_loop:
+    ; Each iteration checks one byte and either restores it immediately or leaves it as-is.
     ld a, b
     or a
     jr z, _rchk_restore_success
@@ -126,6 +127,7 @@ _rchk_restore_success:
     jr _rchk_restore
 
 _rchk_store_success:
+    ; Success path reports the original test value as the observed byte.
     xor a
     ld (_g_rchk_fail), a
     ld a, (_g_rchk_value)

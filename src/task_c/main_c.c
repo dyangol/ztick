@@ -18,6 +18,7 @@ volatile uint16_t counter_c;
 #define MAIN_C_GLYPH_BASE 48u
 #define MAIN_C_LABEL_GLYPH 54u
 #define MAIN_C_GLYPH_COLOR 0xF4u
+/* Task C is the paired demo consumer; it can filter incoming values by parity. */
 static const uint8_t g_task_name_c[] = "c";
 static const uint8_t g_task_c_start_args_usage[] = "even|odd|all";
 static const uint8_t g_label_c[8] = {
@@ -29,6 +30,7 @@ static const uint8_t g_goodbye_c[] = "I was C. Gooodbye!";
 
 void main_c(void);
 
+/* Task spec: demo consumer with a parity selector and matching callbacks. */
 const task_spec_t g_task_spec_c = {
     g_task_name_c,
     main_c,

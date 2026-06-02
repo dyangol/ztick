@@ -12,15 +12,18 @@
 
 #pragma codeseg CODE
 
+/* Chunking and progress are tuned to keep the RAM trampoline small and the console readable. */
 #define RCHK_CHUNK_MAX 0xFFu
 #define RCHK_PROGRESS_STEP 5u
 #define RCHK_PROGRESS_MIN_LEN 512u
 
+/* Task identity and start-argument surface exposed to the loader/shell. */
 static const uint8_t g_task_name_rchk[] = "rchk";
 static const uint8_t g_rchk_start_args_usage[] = "safe|unsafe";
 
 void main_rchk(void);
 
+/* Task spec: auto-started checker with a safe/unsafe start-argument selector. */
 const task_spec_t g_task_spec_rchk = {
     g_task_name_rchk,
     main_rchk,
@@ -33,6 +36,7 @@ const task_spec_t g_task_spec_rchk = {
 
 static uint16_t rchk_page_base(uint8_t page)
 {
+    /* Each ROM page occupies a 16 KiB window in the mapped address space. */
     return (uint16_t)((uint16_t)page << 14);
 }
 
@@ -115,6 +119,7 @@ void main_rchk(void)
     uint8_t total_chunks = 0u;
     uint8_t done_chunks = 0u;
 
+    /* The build-time target defines the test window; reject impossible setups early. */
     if (allowed_start_off > allowed_end_off) {
         rchk_emit_config_error((const uint8_t *)"invalid-allowed-range");
         task_exit();
@@ -126,6 +131,7 @@ void main_rchk(void)
         return;
     }
 
+    /* Clamp the requested run to the configured window so the check never escapes it. */
     max_len = (uint16_t)(allowed_end_off - req_start_off + 1u);
     if ((req_len_cfg == 0u) || (req_len_cfg > max_len)) {
         req_len = max_len;
@@ -142,9 +148,11 @@ void main_rchk(void)
         total_chunks = (uint8_t)((req_len + ((uint16_t)RCHK_CHUNK_MAX - 1u)) / (uint16_t)RCHK_CHUNK_MAX);
     }
 
+    /* Publish the runtime parameters consumed by the RAM-executed assembler stub. */
     rchk_configure((uint8_t)RCHK_VALUE, safe_mode, (uint16_t)RCHK_SAFE_SP, (uint16_t)RCHK_EXEC_ADDR, (uint8_t)PPI_PSR_PORT);
 
     if (rtos_task_stop_requested() == 0u) {
+        /* Remap only the requested page; unsafe mode refuses to self-test the active slot. */
         g_rchk_psr_old = io_read_port((uint8_t)PPI_PSR_PORT);
         mapped_slot = (uint8_t)((g_rchk_psr_old >> shift) & 0x03u);
         if (safe_mode == 0u) {
@@ -157,6 +165,7 @@ void main_rchk(void)
         g_rchk_psr_new = (uint8_t)((g_rchk_psr_old & (uint8_t)(~mask)) | (uint8_t)(((uint8_t)RCHK_SLOT & 0x03u) << shift));
 
         while (remaining > 0u) {
+            /* Keep each pass within a 255-byte chunk so the trampoline stays small. */
             uint8_t chunk_len = (remaining > (uint16_t)RCHK_CHUNK_MAX) ? (uint8_t)RCHK_CHUNK_MAX : (uint8_t)remaining;
 
             rchk_prepare_chunk(chunk_base, chunk_len);
@@ -171,9 +180,11 @@ void main_rchk(void)
 
             if (progress_enabled != 0u) {
                 uint8_t progress_pct;
+
                 done_chunks++;
                 progress_pct = (uint8_t)(((uint16_t)done_chunks * 100u) / (uint16_t)total_chunks);
 
+                /* Emit coarse progress only when a new threshold is crossed. */
                 while ((next_progress <= 100u) && (next_progress <= progress_pct)) {
                     rchk_emit_progress(next_progress);
                     next_progress = (uint8_t)(next_progress + (uint8_t)RCHK_PROGRESS_STEP);
@@ -181,6 +192,7 @@ void main_rchk(void)
             }
         }
 
+        /* Final report reflects the exact checked range and whether any byte mismatched. */
         rchk_emit_result(range_start, range_end, safe_mode);
     }
 
