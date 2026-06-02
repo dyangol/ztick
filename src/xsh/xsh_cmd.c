@@ -1014,20 +1014,3 @@ void xsh_cmd_init_xsh(xsh_t *sh)
     xsh_set_prompt(sh, g_xsh_cmd_prompt);
     xsh_set_unknown_text(sh, g_xsh_cmd_txt_unknown);
 }
-
-void xsh_cmd_boot_cfg_emit_once(void)
-{
-    static uint8_t emitted = 0u;
-
-    if (emitted != 0u) {
-        return;
-    }
-
-    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_0, (uint8_t)(sizeof(g_boot_cfg_line_0) - 1u));
-    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_1, (uint8_t)(sizeof(g_boot_cfg_line_1) - 1u));
-    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_2, (uint8_t)(sizeof(g_boot_cfg_line_2) - 1u));
-    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_3, (uint8_t)(sizeof(g_boot_cfg_line_3) - 1u));
-    (void)zbus_write_tty((uint8_t)XSH_CMD_BOOTCFG_TTY, g_boot_cfg_line_4, (uint8_t)(sizeof(g_boot_cfg_line_4) - 1u));
-
-    emitted = 1u;
-}

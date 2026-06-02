@@ -36,7 +36,6 @@ void main_xsh(void)
     counter_a = 0u;
 
     xsh_cmd_init_xsh(&g_xsh);
-    xsh_cmd_boot_cfg_emit_once();
 
     while (1) {
         counter_a++;

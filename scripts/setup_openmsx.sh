@@ -263,9 +263,7 @@ ZMSG_WATCH_PROC='proc zmsg_watch {} { puts [format {io_write port=0x%02X value=0
 append_openmsx_command "    -command \"source $ZLINK_TCL\" \\\\" "if {[catch {source {$ZLINK_TCL}} _zlink_err]} { puts stderr \"WARN zlink script ($ZLINK_TCL): \$_zlink_err\" }"
 append_openmsx_command "    -command \"zlink_dev::install $IO_DEFAULT_PORT\" \\\\" "if {[catch {zlink_dev::install $IO_DEFAULT_PORT} _zlink_install_err]} { puts stderr \"WARN zlink install ($IO_DEFAULT_PORT): \$_zlink_install_err\" }"
 if [ "$SELF_CHECK" -ne 0 ]; then
-    append_openmsx_command "    -command \"zlink_dev::get_task_list\" \\\\" "if {[catch {zlink_dev::get_task_list} _chk_task_list_err]} { puts stderr \"WARN self-check get_task_list: \$_chk_task_list_err\" }"
-    append_openmsx_command "    -command \"zlink_dev::get_stack_wm\" \\\\" "if {[catch {zlink_dev::get_stack_wm} _chk_stack_wm_err]} { puts stderr \"WARN self-check get_stack_wm: \$_chk_stack_wm_err\" }"
-    append_openmsx_command "    -command \"zlink_dev::shell_cmd help\" \\\\" "if {[catch {zlink_dev::shell_cmd help} _chk_shell_help_err]} { puts stderr \"WARN self-check shell_cmd help: \$_chk_shell_help_err\" }"
+    append_openmsx_command "    -command \"after 250 [list zlink_dev::run_self_check]\" \\\\" "after 250 [list zlink_dev::run_self_check]"
 fi
 if [ "$WATCH_IO" -ne 0 ]; then
     append_openmsx_command "    -command \"debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }\" \\\\" "debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }"

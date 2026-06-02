@@ -593,6 +593,20 @@ proc zlink_dev::get_stack_wm {{task_id ""} {seq auto}} {
     }
 }
 
+proc zlink_dev::run_self_check {} {
+    puts "zlink_dev: self-check start"
+
+    if {[catch {get_task_list_json} _task_list_err]} {
+        puts stderr "WARN self-check get_task_list: $_task_list_err"
+    }
+    if {[catch {get_stack_wm} _stack_wm_err]} {
+        puts stderr "WARN self-check get_stack_wm: $_stack_wm_err"
+    }
+    if {[catch {shell_cmd help} _shell_help_err]} {
+        puts stderr "WARN self-check shell_cmd help: $_shell_help_err"
+    }
+}
+
 proc zlink_dev::status {} {
     variable port
     variable pending_data
