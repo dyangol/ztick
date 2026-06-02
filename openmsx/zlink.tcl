@@ -36,6 +36,7 @@ namespace eval zlink_dev {
     variable kernel_stats_json_pending 0
     variable kernel_task_info_json_pending 0
     variable kernel_task_list_json_pending 0
+    variable kernel_task_list_items {}
     variable verbose_poll 0
     variable verbose_data 1
     variable shell_decode_tty -1
@@ -209,6 +210,29 @@ proc zlink_dev::emit_kernel_stats_json {status len payload} {
     }
 }
 
+proc zlink_dev::extract_task_name {payload base name_len} {
+    set task_name ""
+    set limit $name_len
+    if {$limit > 8} {
+        set limit 8
+    }
+
+    for {set i 0} {$i < 8} {incr i} {
+        set b [u8 [lindex $payload [expr {$base + $i}]]]
+        if {$i < $limit && $b >= 32 && $b <= 126} {
+            append task_name [format %c $b]
+        } elseif {$i < $limit} {
+            append task_name "."
+        }
+    }
+
+    return $task_name
+}
+
+proc zlink_dev::json_escape_text {text} {
+    return [string map {\\ \\\\ \" \\\"} $text]
+}
+
 proc zlink_dev::emit_kernel_task_info_json {status len payload} {
     if {$status == 0 && $len >= 16} {
         set task_id [u8 [lindex $payload 2]]
@@ -216,22 +240,15 @@ proc zlink_dev::emit_kernel_task_info_json {status len payload} {
         set task_tty [u8 [lindex $payload 4]]
         set task_sp [u16le [lindex $payload 5] [lindex $payload 6]]
         set name_len [u8 [lindex $payload 7]]
-        if {$name_len > 8} {
-            set name_len 8
+        set display_name_len $name_len
+        if {$display_name_len > 8} {
+            set display_name_len 8
         }
-        set name ""
-        for {set i 0} {$i < 8} {incr i} {
-            set b [u8 [lindex $payload [expr {8 + $i}]]]
-            if {$i < $name_len && $b >= 32 && $b <= 126} {
-                append name [format %c $b]
-            } elseif {$i < $name_len} {
-                append name "."
-            }
-        }
-        set name_json [string map {\\ \\\\ \" \\\"} $name]
+        set name [extract_task_name $payload 8 $name_len]
+        set name_json [json_escape_text $name]
 
         puts [format "{\"type\":\"kernel_task_info\",\"status\":0,\"id\":%u,\"tty\":%u,\"state\":%u,\"sp\":\"0x%04X\",\"name_len\":%u,\"name\":\"%s\"}" \
-            $task_id $task_tty $task_state $task_sp $name_len $name_json]
+            $task_id $task_tty $task_state $task_sp $display_name_len $name_json]
     } else {
         puts [format "{\"type\":\"kernel_task_info\",\"status\":%u,\"len\":%u,\"payload_hex\":\"%s\"}" \
             $status $len [fmt_bytes $payload]]
@@ -239,45 +256,38 @@ proc zlink_dev::emit_kernel_task_info_json {status len payload} {
 }
 
 proc zlink_dev::emit_kernel_task_list_json {status len payload} {
+    variable kernel_task_list_items
+
     if {$status == 0 && $len >= 3} {
-        set count [u8 [lindex $payload 2]]
-        set idx 3
-        set parsed 0
-        set items {}
-        set entry_size 11
-
-        while {$parsed < $count && ($idx + 10) < $len} {
-            set task_id [u8 [lindex $payload $idx]]
-            set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
-            set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
-            set name_base [expr {$idx + 3}]
-            if {$name_len > 8} {
-                set name_len 8
-            }
-
-            set task_name ""
-            for {set i 0} {$i < 8} {incr i} {
-                set b [u8 [lindex $payload [expr {$name_base + $i}]]]
-                if {$i < $name_len && $b >= 32 && $b <= 126} {
-                    append task_name [format %c $b]
-                } elseif {$i < $name_len} {
-                    append task_name "."
-                }
-            }
-            set task_name_json [string map {\\ \\\\ \" \\\"} $task_name]
-            lappend items [format "{\"id\":%u,\"tty\":%u,\"name_len\":%u,\"name\":\"%s\"}" \
-                $task_id $task_tty $name_len $task_name_json]
-
-            set idx [expr {$idx + $entry_size}]
-            incr parsed
+        if {[llength $kernel_task_list_items] != 0} {
+            puts [format {{"type":"kernel_task_list","status":%u,"count":%u,"tasks":[%s]}} \
+                $status [llength $kernel_task_list_items] [join $kernel_task_list_items ","]]
+        } else {
+            puts [format {{"type":"kernel_task_list","status":0,"count":0,"tasks":[]}}]
         }
-
-        puts [format {{"type":"kernel_task_list","status":0,"count":%u,"tasks":[%s]}} \
-            $parsed [join $items ","]]
     } else {
         puts [format "{\"type\":\"kernel_task_list\",\"status\":%u,\"len\":%u,\"payload_hex\":\"%s\"}" \
             $status $len [fmt_bytes $payload]]
     }
+}
+
+proc zlink_dev::reset_kernel_task_list_accumulator {} {
+    variable kernel_task_list_items
+    set kernel_task_list_items {}
+}
+
+proc zlink_dev::append_kernel_task_list_entry {payload idx} {
+    set task_id [u8 [lindex $payload $idx]]
+    set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
+    set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
+    set display_name_len $name_len
+    if {$display_name_len > 8} {
+        set display_name_len 8
+    }
+    set task_name [extract_task_name $payload [expr {$idx + 3}] $name_len]
+    set task_name_json [json_escape_text $task_name]
+    return [format "{\"id\":%u,\"tty\":%u,\"name_len\":%u,\"name\":\"%s\"}" \
+        $task_id $task_tty $display_name_len $task_name_json]
 }
 
 proc zlink_dev::crc8 {bytes} {
@@ -367,6 +377,7 @@ proc zlink_dev::reset_state {} {
     variable verbose_data
     variable kernel_task_info_json_pending
     variable kernel_task_list_json_pending
+    variable kernel_task_list_items
     variable shell_decode_tty
     variable shell_decode_enabled
     variable shell_decode_line
@@ -392,6 +403,7 @@ proc zlink_dev::reset_state {} {
     set kernel_stats_json_pending 0
     set kernel_task_info_json_pending 0
     set kernel_task_list_json_pending 0
+    set kernel_task_list_items {}
     set verbose_poll 0
     set verbose_data 1
     set shell_decode_tty 0
@@ -560,6 +572,7 @@ proc zlink_dev::get_task_info_json {{task_id ""} {seq auto}} {
 proc zlink_dev::get_task_list {{seq auto}} {
     variable KERNEL_TTY
     variable CMD_GET_TASK_LIST
+    reset_kernel_task_list_accumulator
     queue_data $KERNEL_TTY [list $CMD_GET_TASK_LIST] $seq
 }
 
@@ -696,6 +709,7 @@ proc zlink_dev::handle_msx_frame {frame} {
     variable kernel_stats_json_pending
     variable kernel_task_info_json_pending
     variable kernel_task_list_json_pending
+    variable kernel_task_list_items
     variable verbose_poll
     variable verbose_data
     variable shell_decode_tty
@@ -791,20 +805,13 @@ proc zlink_dev::handle_msx_frame {frame} {
                 set task_tty [u8 [lindex $payload 4]]
                 set task_sp [u16le [lindex $payload 5] [lindex $payload 6]]
                 set name_len [u8 [lindex $payload 7]]
-                if {$name_len > 8} {
-                    set name_len 8
+                set display_name_len $name_len
+                if {$display_name_len > 8} {
+                    set display_name_len 8
                 }
-                set task_name ""
-                for {set i 0} {$i < 8} {incr i} {
-                    set b [u8 [lindex $payload [expr {8 + $i}]]]
-                    if {$i < $name_len && $b >= 32 && $b <= 126} {
-                        append task_name [format %c $b]
-                    } elseif {$i < $name_len} {
-                        append task_name "."
-                    }
-                }
+                set task_name [extract_task_name $payload 8 $name_len]
                 puts [format "zlink_dev: kernel task_info task_id=%u tty=%u state=%u sp=0x%04X name_len=%u name=%s" \
-                    $task_id $task_tty $task_state $task_sp $name_len $task_name]
+                    $task_id $task_tty $task_state $task_sp $display_name_len $task_name]
             } else {
                 puts [format "zlink_dev: kernel task_info error status=%u len=%u payload=%s" \
                     $status $len [fmt_bytes $payload]]
@@ -815,44 +822,53 @@ proc zlink_dev::handle_msx_frame {frame} {
                 set kernel_task_info_json_pending 0
             }
         } elseif {$tty == $KERNEL_TTY && $len >= 3 && [lindex $payload 0] == $RSP_TASK_LIST} {
-            set status [u8 [lindex $payload 1]]
+            set status_raw [u8 [lindex $payload 1]]
+            set status [expr {$status_raw & 0x7F}]
+            set more [expr {$status_raw & 0x80}]
             if {$status == 0} {
                 set count [u8 [lindex $payload 2]]
                 set idx 3
                 set parsed 0
-                set items {}
-                set entry_size 11
+                set frame_items {}
                 while {$parsed < $count && ($idx + 10) < $len} {
-                    set task_id [u8 [lindex $payload $idx]]
-                    set task_tty [u8 [lindex $payload [expr {$idx + 1}]]]
-                    set name_len [u8 [lindex $payload [expr {$idx + 2}]]]
-                    set name_base [expr {$idx + 3}]
-                    if {$name_len > 8} {
-                        set name_len 8
-                    }
-                    set task_name ""
-                    for {set i 0} {$i < 8} {incr i} {
-                        set b [u8 [lindex $payload [expr {$name_base + $i}]]]
-                        if {$i < $name_len && $b >= 32 && $b <= 126} {
-                            append task_name [format %c $b]
-                        } elseif {$i < $name_len} {
-                            append task_name "."
-                        }
-                    }
-                    lappend items [format "id=%u tty=%s name=%s" $task_id $task_tty $task_name]
-                    set idx [expr {$idx + $entry_size}]
+                    lappend frame_items [append_kernel_task_list_entry $payload $idx]
+                    set idx [expr {$idx + 11}]
                     incr parsed
                 }
-                puts [format "zlink_dev: kernel task_list count=%u items=%s" \
-                    $count [join $items { | }]]
+
+                if {$parsed != $count || $idx != $len} {
+                    puts [format "zlink_dev: kernel task_list error status=%u len=%u payload=%s" \
+                        $status_raw $len [fmt_bytes $payload]]
+                    reset_kernel_task_list_accumulator
+                    if {$kernel_task_list_json_pending != 0} {
+                        emit_kernel_task_list_json $status_raw $len $payload
+                        set kernel_task_list_json_pending 0
+                    }
+                } else {
+                    if {[llength $frame_items] > 0} {
+                        set kernel_task_list_items [concat $kernel_task_list_items $frame_items]
+                    }
+
+                    if {$more != 0} {
+                        puts [format "zlink_dev: kernel task_list chunk count=%u more=1" [llength $frame_items]]
+                    } else {
+                        puts [format "zlink_dev: kernel task_list count=%u items=%s" \
+                            [llength $kernel_task_list_items] [join $kernel_task_list_items { | }]]
+                        if {$kernel_task_list_json_pending != 0} {
+                            emit_kernel_task_list_json $status_raw $len $payload
+                            set kernel_task_list_json_pending 0
+                        }
+                        reset_kernel_task_list_accumulator
+                    }
+                }
             } else {
                 puts [format "zlink_dev: kernel task_list error status=%u len=%u payload=%s" \
-                    $status $len [fmt_bytes $payload]]
-            }
-
-            if {$kernel_task_list_json_pending != 0} {
-                emit_kernel_task_list_json $status $len $payload
-                set kernel_task_list_json_pending 0
+                    $status_raw $len [fmt_bytes $payload]]
+                reset_kernel_task_list_accumulator
+                if {$kernel_task_list_json_pending != 0} {
+                    emit_kernel_task_list_json $status_raw $len $payload
+                    set kernel_task_list_json_pending 0
+                }
             }
         } elseif {$tty == $KERNEL_TTY && $len >= 4 && [lindex $payload 0] == $RSP_STACK_WM} {
             set status [u8 [lindex $payload 1]]

@@ -203,15 +203,16 @@ Lets you obtain a summary of all active tasks with identifier, `tty`, and name.
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `03` (`GET_TASK_LIST`)
-- Response MSX->host (`DATA`, `tty=15`): payload
+- Response MSX->host (`DATA`, `tty=15`): one or more `RSP_TASK_LIST` frames
   - `83` (`RSP_TASK_LIST`)
-  - `status` (`00=OK`, `02=BAD_LEN`)
-  - `count`
+  - `status` (`00=OK_FINAL`, `80=OK_MORE`, `02=BAD_LEN`)
+  - `count` entries in this frame
   - `count` entries of 11 bytes:
     - `task_id`
     - `task_tty`
     - `task_name_len`
     - `task_name[8]`
+- `openmsx/zlink.tcl` assembles all fragments transparently and the JSON helper returns the full aggregated list.
 - In `openmsx/zlink.tcl`, use:
   - `zlink_dev::get_task_list` / `zlink::get_task_list`
   - `zlink_dev::get_task_list_json` / `zlink::get_task_list_json`
@@ -225,11 +226,13 @@ Lets you obtain a summary of all active tasks with identifier, `tty`, and name.
 ## Stack Watermark
 
 Lets you measure stack usage (current and peak) to size stacks and prevent stack overflow.
+Only the `07` opcode is supported here; the legacy `04` opcode has been removed.
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `07` (`GET_STACK_WM`, current task), or
   - payload `07 <task_id>` (`GET_STACK_WM` for a specific task)
 - Response MSX->host (`DATA`, `tty=15`): payload
+  - fixed 10-byte payload: `87 status task_id task_state stack_size_lo stack_size_hi peak_used_lo peak_used_hi current_used_lo current_used_hi`
   - `87` (`RSP_STACK_WM`)
   - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
   - `task_id`

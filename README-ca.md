@@ -203,15 +203,16 @@ Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i no
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `03` (`GET_TASK_LIST`)
-- Response MSX->host (`DATA`, `tty=15`): payload
+- Response MSX->host (`DATA`, `tty=15`): un o més frames `RSP_TASK_LIST`
   - `83` (`RSP_TASK_LIST`)
-  - `status` (`00=OK`, `02=BAD_LEN`)
-  - `count`
+  - `status` (`00=OK_FINAL`, `80=OK_MORE`, `02=BAD_LEN`)
+  - `count` entrades en aquest frame
   - `count` entrades de 11 bytes:
     - `task_id`
     - `task_tty`
     - `task_name_len`
     - `task_name[8]`
+- `openmsx/zlink.tcl` reuneix tots els fragments transparentment i el helper JSON retorna la llista completa agregada.
 - A `openmsx/zlink.tcl`, usa:
   - `zlink_dev::get_task_list` / `zlink::get_task_list`
   - `zlink_dev::get_task_list_json` / `zlink::get_task_list_json`
@@ -224,11 +225,13 @@ Permet obtenir un resum de totes les tasks actives amb identificador, `tty` i no
 
 ## Watermark de stacks
 Permet mesurar ús de pila (actual i de pic) per dimensionar les piles de memòria i prevenir `stack overflow`.
+Només s'accepta l'opcode `07`; l'opcode antic `04` ja no existeix.
 
 - Request host->MSX (`DATA`, `tty=15`):
   - payload `07` (`GET_STACK_WM`, task actual), o
   - payload `07 <task_id>` (`GET_STACK_WM` d'un task concret)
 - Response MSX->host (`DATA`, `tty=15`): payload
+  - payload fix de 10 bytes: `87 status task_id task_state stack_size_lo stack_size_hi peak_used_lo peak_used_hi current_used_lo current_used_hi`
   - `87` (`RSP_STACK_WM`)
   - `status` (`00=OK`, `02=BAD_LEN`, `03=BAD_TASK`)
   - `task_id`

@@ -76,7 +76,7 @@ static void rchk_emit_progress(uint8_t percent)
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
-    (void)sprint_cstr(&out, (const uint8_t *)"rchk PROG ");
+    (void)sprint_cstr(&out, (const uint8_t *)"rchk PROGRESS ");
     (void)sprint_u8_dec(&out, percent);
     (void)sprint_cstr(&out, (const uint8_t *)"%");
 

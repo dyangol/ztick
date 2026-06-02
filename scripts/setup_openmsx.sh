@@ -8,6 +8,8 @@ MACHINES_DIR="$SHARE_DIR/machines"
 OPENMSX_BIN="${OPENMSX_BIN:-openmsx}"
 OPENMSX_SYSTEM_DATA_AUTO=""
 OPENMSX_SYSTEM_DATA_LABEL=""
+OPENMSX_COMMAND_ARGS=()
+OPENMSX_COMMAND_LABELS=()
 
 usage() {
     cat <<EOF
@@ -16,8 +18,8 @@ Usage: $0 [--target <name>] [--watch-io] [--bp-xsh] [--bp-bootloader] [--self-ch
 
 Default target: ztick
 Default watchpoints: disabled
-Default xsh entry breakpoint: disabled (`_main_xsh`)
-Default bootloader entry breakpoint: disabled (`0x0000`)
+Default xsh entry breakpoint: disabled (_main_xsh)
+Default bootloader entry breakpoint: disabled (0x0000)
 Default self-check: disabled
 openMSX binary: \$OPENMSX_BIN (default: openmsx)
 EOF
@@ -119,6 +121,14 @@ manifest_get() {
             exit
         }
     ' "$TARGET_MANIFEST"
+}
+
+append_openmsx_command() {
+    local label_line="$1"
+    local command="$2"
+
+    OPENMSX_COMMAND_LABELS+=("$label_line")
+    OPENMSX_COMMAND_ARGS+=(-command "$command")
 }
 
 if [ ! -f "$TARGET_MANIFEST" ]; then
@@ -236,58 +246,49 @@ else
 fi
 
 BREAKPOINT_XSH_LABEL="    -command \"debug set_bp $XSH_ADDR\" \\\\"
-OPENMSX_BREAKPOINT_XSH_ARGS=(-command "if {[catch {debug set_bp $XSH_ADDR} _bp_err]} { puts stderr \"WARN main_xsh breakpoint ($XSH_ADDR): \$_bp_err\" }")
 BREAKPOINT_BOOTLOADER_LABEL="    -command \"debug set_bp 0x0000\" \\\\"
-OPENMSX_BREAKPOINT_BOOTLOADER_ARGS=(-command "if {[catch {debug set_bp 0x0000} _bp_boot_err]} { puts stderr \"WARN bootloader breakpoint (0x0000): \$_bp_boot_err\" }")
-OPENMSX_SOURCE_ZLINK_ARGS=(-command "if {[catch {source {$ZLINK_TCL}} _zlink_err]} { puts stderr \"WARN zlink script ($ZLINK_TCL): \$_zlink_err\" }")
-OPENMSX_INSTALL_ZLINK_ARGS=(-command "if {[catch {zlink_dev::install $IO_DEFAULT_PORT} _zlink_install_err]} { puts stderr \"WARN zlink install ($IO_DEFAULT_PORT): \$_zlink_install_err\" }")
-OPENMSX_SELF_CHECK_ARGS=()
-SELF_CHECK_LABEL=""
-if [ "$SELF_CHECK" -ne 0 ]; then
-    OPENMSX_SELF_CHECK_ARGS=(
-        -command "if {[catch {zlink_dev::get_task_list} _chk_task_list_err]} { puts stderr \"WARN self-check get_task_list: \$_chk_task_list_err\" }"
-        -command "if {[catch {zlink_dev::get_stack_wm} _chk_stack_wm_err]} { puts stderr \"WARN self-check get_stack_wm: \$_chk_stack_wm_err\" }"
-        -command "if {[catch {zlink_dev::shell_cmd help} _chk_shell_help_err]} { puts stderr \"WARN self-check shell_cmd help: \$_chk_shell_help_err\" }"
-    )
-    SELF_CHECK_LABEL="    -command \"zlink_dev::get_task_list\" \\
-    -command \"zlink_dev::get_stack_wm\" \\
-    -command \"zlink_dev::shell_cmd help\" \\"
-fi
 if [ "$BP_XSH" -eq 0 ]; then
     BREAKPOINT_XSH_LABEL=""
-    OPENMSX_BREAKPOINT_XSH_ARGS=()
+else
+    append_openmsx_command "$BREAKPOINT_XSH_LABEL" "if {[catch {debug set_bp $XSH_ADDR} _bp_err]} { puts stderr \"WARN main_xsh breakpoint ($XSH_ADDR): \$_bp_err\" }"
 fi
 if [ "$BP_BOOTLOADER" -eq 0 ]; then
     BREAKPOINT_BOOTLOADER_LABEL=""
-    OPENMSX_BREAKPOINT_BOOTLOADER_ARGS=()
+else
+    append_openmsx_command "$BREAKPOINT_BOOTLOADER_LABEL" "if {[catch {debug set_bp 0x0000} _bp_boot_err]} { puts stderr \"WARN bootloader breakpoint (0x0000): \$_bp_boot_err\" }"
 fi
 
 ZMSG_WATCH_PROC='proc zmsg_watch {} { puts [format {io_write port=0x%02X value=0x%02X} [expr {$::wp_last_address & 0xFF}] [expr {$::wp_last_value & 0xFF}]] }'
 
-WATCH_MAIN_LABEL=""
-OPENMSX_WATCH_ARGS=()
+append_openmsx_command "    -command \"source $ZLINK_TCL\" \\\\" "if {[catch {source {$ZLINK_TCL}} _zlink_err]} { puts stderr \"WARN zlink script ($ZLINK_TCL): \$_zlink_err\" }"
+append_openmsx_command "    -command \"zlink_dev::install $IO_DEFAULT_PORT\" \\\\" "if {[catch {zlink_dev::install $IO_DEFAULT_PORT} _zlink_install_err]} { puts stderr \"WARN zlink install ($IO_DEFAULT_PORT): \$_zlink_install_err\" }"
+if [ "$SELF_CHECK" -ne 0 ]; then
+    append_openmsx_command "    -command \"zlink_dev::get_task_list\" \\\\" "if {[catch {zlink_dev::get_task_list} _chk_task_list_err]} { puts stderr \"WARN self-check get_task_list: \$_chk_task_list_err\" }"
+    append_openmsx_command "    -command \"zlink_dev::get_stack_wm\" \\\\" "if {[catch {zlink_dev::get_stack_wm} _chk_stack_wm_err]} { puts stderr \"WARN self-check get_stack_wm: \$_chk_stack_wm_err\" }"
+    append_openmsx_command "    -command \"zlink_dev::shell_cmd help\" \\\\" "if {[catch {zlink_dev::shell_cmd help} _chk_shell_help_err]} { puts stderr \"WARN self-check shell_cmd help: \$_chk_shell_help_err\" }"
+fi
 if [ "$WATCH_IO" -ne 0 ]; then
-    WATCH_MAIN_LABEL="    -command \"debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }\" \\\\"
-    OPENMSX_WATCH_ARGS=(-command "debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }")
+    append_openmsx_command "    -command \"debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }\" \\\\" "debug set_watchpoint write_io $IO_DEFAULT_PORT {} { zmsg_watch }"
 fi
 
-cat <<EOF
-Installed machine files into:
-  $MACHINES_DIR
-
-Launching openMSX with:
-$OPENMSX_SYSTEM_DATA_LABEL
-  $OPENMSX_BIN -machine $OPENMSX_MACHINE_NAME -ext debugdevice -ext programmabledevice \\
-${OPENMSX_ROM_LABEL}
-    -command "debug symbols load $SYMBOL_FILE" \\
-$BREAKPOINT_BOOTLOADER_LABEL
-$BREAKPOINT_XSH_LABEL
-    -command "source $ZLINK_TCL" \\
-    -command "zlink_dev::install $IO_DEFAULT_PORT" \\
-$SELF_CHECK_LABEL
-    -command "$ZMSG_WATCH_PROC" \\
-$WATCH_MAIN_LABEL
-EOF
+printf '%s\n' \
+    "Installed machine files into:" \
+    "  $MACHINES_DIR" \
+    "" \
+    "Launching openMSX with:"
+if [ -n "$OPENMSX_SYSTEM_DATA_LABEL" ]; then
+    printf '%s\n' "$OPENMSX_SYSTEM_DATA_LABEL"
+fi
+printf '%s\n' \
+    "  $OPENMSX_BIN -machine $OPENMSX_MACHINE_NAME -ext debugdevice -ext programmabledevice \\"
+if [ -n "$OPENMSX_ROM_LABEL" ]; then
+    printf '%s\n' "$OPENMSX_ROM_LABEL"
+fi
+printf '%s\n' "    -command \"debug symbols load $SYMBOL_FILE\" \\"
+for label_line in "${OPENMSX_COMMAND_LABELS[@]}"; do
+    printf '%s\n' "$label_line"
+done
+printf '%s\n' "    -command \"$ZMSG_WATCH_PROC\" \\"
 
 if [ -n "$OPENMSX_SYSTEM_DATA_AUTO" ]; then
     export OPENMSX_SYSTEM_DATA="$OPENMSX_SYSTEM_DATA_AUTO"
@@ -296,10 +297,5 @@ fi
 exec "$OPENMSX_BIN" -machine "$OPENMSX_MACHINE_NAME" -ext debugdevice -ext programmabledevice \
     "${OPENMSX_ROM_ARGS[@]}" \
     -command "debug symbols load $SYMBOL_FILE" \
-    "${OPENMSX_BREAKPOINT_BOOTLOADER_ARGS[@]}" \
-    "${OPENMSX_BREAKPOINT_XSH_ARGS[@]}" \
-    "${OPENMSX_SOURCE_ZLINK_ARGS[@]}" \
-    "${OPENMSX_INSTALL_ZLINK_ARGS[@]}" \
-    "${OPENMSX_SELF_CHECK_ARGS[@]}" \
-    -command "$ZMSG_WATCH_PROC" \
-    "${OPENMSX_WATCH_ARGS[@]}"
+    "${OPENMSX_COMMAND_ARGS[@]}" \
+    -command "$ZMSG_WATCH_PROC"

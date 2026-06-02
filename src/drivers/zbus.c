@@ -14,13 +14,13 @@
 #define ZBUS_KERNEL_CTRL_CMD_GET_STATS 0x01u
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_INFO 0x02u
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_LIST 0x03u
-#define ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM_LEGACY 0x04u
 #define ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM 0x07u
 #define ZBUS_KERNEL_CTRL_RSP_STATS 0x81u
 #define ZBUS_KERNEL_CTRL_RSP_TASK_INFO 0x82u
 #define ZBUS_KERNEL_CTRL_RSP_TASK_LIST 0x83u
 #define ZBUS_KERNEL_CTRL_RSP_STACK_WM 0x87u
 #define ZBUS_KERNEL_CTRL_STATUS_OK 0x00u
+#define ZBUS_KERNEL_CTRL_STATUS_MORE 0x80u
 #define ZBUS_KERNEL_CTRL_STATUS_BAD_CMD 0x01u
 #define ZBUS_KERNEL_CTRL_STATUS_BAD_LEN 0x02u
 #define ZBUS_KERNEL_CTRL_STATUS_BAD_TASK 0x03u
@@ -344,41 +344,52 @@ static void zbus_kernel_send_task_list_reply(uint8_t status)
     payload[1] = status;
     payload[2] = 0u;
 
-    if (status == (uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK) {
-        for (task_id = 0u; task_id < MAX_TASKS; ++task_id) {
-            uint8_t name_len;
-            uint8_t tty_id = (uint8_t)ZBUS_INVALID_TTY_ID;
-            uint8_t i;
-
-            if (g_tasks[task_id].state == TASK_UNUSED) {
-                continue;
-            }
-
-            if ((uint8_t)(len + ZBUS_KERNEL_CTRL_TASKLIST_ENTRY_LEN) > (uint8_t)ZBUS_KERNEL_CTRL_REPLY_TASKLIST_MAX_LEN) {
-                break;
-            }
-
-            name_len = g_tasks[task_id].name_len;
-            if (name_len > TASK_NAME_MAX) {
-                name_len = TASK_NAME_MAX;
-            }
-            if (zbus_tty_get_for_task(task_id, &tty_id) == 0u) {
-                tty_id = (uint8_t)ZBUS_INVALID_TTY_ID;
-            }
-
-            payload[len] = task_id;
-            payload[(uint8_t)(len + 1u)] = tty_id;
-            payload[(uint8_t)(len + 2u)] = name_len;
-            for (i = 0u; i < TASK_NAME_MAX; ++i) {
-                payload[(uint8_t)(len + 3u + i)] = g_tasks[task_id].name[i];
-            }
-
-            len = (uint8_t)(len + ZBUS_KERNEL_CTRL_TASKLIST_ENTRY_LEN);
-            count++;
-        }
-        payload[2] = count;
+    if (status != (uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK) {
+        zbus_kernel_send_payload(payload, len);
+        return;
     }
 
+    for (task_id = 0u; task_id < MAX_TASKS; ++task_id) {
+        uint8_t name_len;
+        uint8_t tty_id = (uint8_t)ZBUS_INVALID_TTY_ID;
+        uint8_t i;
+
+        if (g_tasks[task_id].state == TASK_UNUSED) {
+            continue;
+        }
+
+        if ((uint8_t)(len + ZBUS_KERNEL_CTRL_TASKLIST_ENTRY_LEN) > (uint8_t)ZBUS_KERNEL_CTRL_REPLY_TASKLIST_MAX_LEN) {
+            payload[1] = (uint8_t)(ZBUS_KERNEL_CTRL_STATUS_OK | ZBUS_KERNEL_CTRL_STATUS_MORE);
+            payload[2] = count;
+            zbus_kernel_send_payload(payload, len);
+
+            len = 3u;
+            count = 0u;
+            payload[0] = (uint8_t)ZBUS_KERNEL_CTRL_RSP_TASK_LIST;
+            payload[1] = (uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK;
+            payload[2] = 0u;
+        }
+
+        name_len = g_tasks[task_id].name_len;
+        if (name_len > TASK_NAME_MAX) {
+            name_len = TASK_NAME_MAX;
+        }
+        if (zbus_tty_get_for_task(task_id, &tty_id) == 0u) {
+            tty_id = (uint8_t)ZBUS_INVALID_TTY_ID;
+        }
+
+        payload[len] = task_id;
+        payload[(uint8_t)(len + 1u)] = tty_id;
+        payload[(uint8_t)(len + 2u)] = name_len;
+        for (i = 0u; i < TASK_NAME_MAX; ++i) {
+            payload[(uint8_t)(len + 3u + i)] = g_tasks[task_id].name[i];
+        }
+
+        len = (uint8_t)(len + ZBUS_KERNEL_CTRL_TASKLIST_ENTRY_LEN);
+        count++;
+    }
+
+    payload[2] = count;
     zbus_kernel_send_payload(payload, len);
 }
 
@@ -445,8 +456,7 @@ static void zbus_kernel_handle_control(const zlink_data_frame_t *rx_frame)
             return;
         }
         zbus_kernel_send_task_list_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK);
-    } else if ((cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM)
-        || (cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM_LEGACY)) {
+    } else if (cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM) {
         uint8_t task_id;
         if (rx_frame->len > 2u) {
             zbus_kernel_send_stack_wm_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_BAD_LEN, g_current_task);
