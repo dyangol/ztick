@@ -289,6 +289,8 @@ You can also build a specific target:
 make TARGET=ztick bootstrap
 make TARGET=ztick-unitcard bootstrap
 make TARGET=hb-55p bootstrap
+make TARGET=hb-75p bootstrap
+make TARGET=vg-8010 bootstrap
 ```
 To remove object code created in previous steps:
 
@@ -306,13 +308,15 @@ Example with explicit override:
 
 ```bash
 make TARGET=hb-55p IMAGE_LAYOUT=flash2x64 bootstrap
+make TARGET=hb-75p IMAGE_LAYOUT=flash2x64 bootstrap
+make TARGET=vg-8010 IMAGE_LAYOUT=flash2x64 bootstrap
 ```
 
 There are two image formats or layouts. The choice between one and the other depends on whether we use a physical MSX with the bootstrapping board.
 
 The `flat64` layout is used in targets such as `ztick` and generates a single image: `bin/<target>/<ROM_IMAGE_NAME>`. It is `65536` bytes and boot code enters directly through `startup.s`.
 
-The `flash2x64` layout is used for physical targets such as `hb-55p`. It generates two primary images and one composite image built from them:
+The `flash2x64` layout is used for physical targets such as `hb-55p`, `hb-75p`, and `vg-8010`. It generates two primary images and one composite image built from them:
 
 * `bin/<target>/bootloader.rom` (64 KB)
 * `bin/<target>/startup.rom` (64 KB)
@@ -341,6 +345,8 @@ After building, you can start openMSX with the project script. To use the system
 ./scripts/setup_openmsx.sh ztick
 ./scripts/setup_openmsx.sh ztick-unitcard
 ./scripts/setup_openmsx.sh hb-55p
+./scripts/setup_openmsx.sh hb-75p
+./scripts/setup_openmsx.sh vg-8010
 ```
 
 `ztick-unitcard` simulates a staged boot flow for a ROM+RAM card in primary slot 1:
@@ -362,10 +368,22 @@ If you want to pause execution at the xsh entry point (`_main_xsh`), enable the 
 ./scripts/setup_openmsx.sh ztick --bp-xsh
 ```
 
-By default, `setup_openmsx.sh` runs a small diagnostic self-check (`get_task_list`, `get_stack_wm`, and `shell_cmd help`) right after installing `zlink`. If you prefer a clean start:
+If you want to pause execution at the bootloader (`0x0000`), use:
 
 ```bash
-./scripts/setup_openmsx.sh ztick --no-self-check
+./scripts/setup_openmsx.sh ztick --bp-bootloader
+```
+
+If you want to observe I/O writes on the target's configured port, enable:
+
+```bash
+./scripts/setup_openmsx.sh ztick --watch-io
+```
+
+By default, `setup_openmsx.sh` does not run any self-check. If you want the diagnostic checks (`get_task_list`, `get_stack_wm`, and `shell_cmd help`) after installing `zlink`, add:
+
+```bash
+./scripts/setup_openmsx.sh ztick --self-check
 ```
 
 ## Shell `xsh`
@@ -403,16 +421,10 @@ Available commands:
   * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
   * `ipc`: `q_used`, `q_cap`
 
-After boot, tasks are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1` in bundled targets). Task `c` can be started on demand with:
+After boot, tasks `xsh`, `b`, and `c` are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1 c:3` in bundled targets). Task `rchk` can be started on demand with:
 
 ```tcl
-zlink_dev::shell_cmd "start b"
-zlink_dev::shell_cmd "start c"
-zlink_dev::shell_cmd "start b 3"
 zlink_dev::shell_cmd "start rchk safe"
-zlink_dev::shell_cmd "weight 1 2"
-zlink_dev::shell_cmd "stop b"
-zlink_dev::shell_cmd "stop c"
 ```
 
 From the openMSX Tcl console, you can inject a shell command via:

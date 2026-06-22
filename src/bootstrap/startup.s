@@ -13,16 +13,11 @@
 _reset_vector:
     di
     im 1
-    ;; Optionally configure PPI/PSR here (single-image targets).
-    ;; flash2x64 targets typically do this in bootloader.s.
-.if STARTUP_CONFIGURE_PSR
+    ;; Configure the PPI and final PSR mapping directly at reset.
     ld a, #PPI_CTRL_VALUE
     out (PPI_CTRL_PORT), a
-    ld a, #BOOT_PSR_TRANSITION
-    out (PPI_PSR_PORT), a
     ld a, #BOOT_PSR_VALUE
     out (PPI_PSR_PORT), a
-.endif
     ld sp, #__STACK_START
     ;; Clear global DATA/BSS so C globals start from a deterministic zero state.
     ld hl, #s__DATA

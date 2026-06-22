@@ -84,6 +84,14 @@ En aquest cas, Sony va reservar un slot intern complet (_slot 2_) per la RAM i a
 | 2 | `0x8000-0xBFFF` | RAM |
 | 3 | `0xC000-0xFFFF` | RAM |
 
+El Philips VG-8010 conté un únic _slot_ intern. Els _slots_ 1 i 2 són extern (expansió). El _slot 0_ té el següent mapa:
+
+| Pàgina | Interval d'adreces | Recurs |
+|:---|:---|:---|
+| 0 | `0x0000-0x3FFF` | ROM |
+| 1 | `0x4000-0x7FFF` | ROM |
+| 2 | `0x8000-0xBFFF` | RAM |
+| 3 | `0xC000-0xFFFF` | RAM |
 
 ## Disseny del Sistema Operatiu
 Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flash i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flash i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flash proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flash pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tots el programari necessari sense necessitar la RAM integrada.
@@ -288,6 +296,8 @@ També podem compilar un target en concret:
 make TARGET=ztick bootstrap
 make TARGET=ztick-unitcard bootstrap
 make TARGET=hb-55p bootstrap
+make TARGET=hb-75p bootstrap
+make TARGET=vg-8010 bootstrap
 ```
 Per eliminar el codi objecte creat en fases anteriors:
 
@@ -305,13 +315,15 @@ Exemple amb _override_ explícit:
 
 ```bash
 make TARGET=hb-55p IMAGE_LAYOUT=flash2x64 bootstrap
+make TARGET=hb-75p IMAGE_LAYOUT=flash2x64 bootstrap
+make TARGET=vg-8010 IMAGE_LAYOUT=flash2x64 bootstrap
 ```
 
 Existeixen dos formats o _layouts_ d'imatge. L'elecció entr una o altra dependrà de si fem servir un MSX físic amb la targeta de _bootstrapping_. 
 
 El _layout_ `flat64` s'utilitza en targets com `ztick` i es genera en una sola imatge: `bin/<target>/<ROM_IMAGE_NAME>`. Fa `65536` bytes i el codi d'arrencada entra directament per `startup.s`.
 
-El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`. Es generen dos imatges primaries i una composta a partir de les anteriors:
+El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`, `hb-75p` i `vg-8010`. Es generen dos imatges primaries i una composta a partir de les anteriors:
 
 * `bin/<target>/bootloader.rom` (64KB)
 * `bin/<target>/startup.rom` (64KB)
@@ -340,6 +352,8 @@ Després de compilar, es pot arrencar openMSX amb el script del projecte. Si vol
 ./scripts/setup_openmsx.sh ztick
 ./scripts/setup_openmsx.sh ztick-unitcard
 ./scripts/setup_openmsx.sh hb-55p
+./scripts/setup_openmsx.sh hb-75p
+./scripts/setup_openmsx.sh vg-8010
 ```
 
 `ztick-unitcard` simula un flux d'arrencada en dues etapes per una targeta ROM+RAM al _primary slot 1_:
@@ -361,10 +375,22 @@ Si vols aturar l'execució al punt d'entrada de xsh (`_main_xsh`), activa el bre
 ./scripts/setup_openmsx.sh ztick --bp-xsh
 ```
 
-Per defecte, `setup_openmsx.sh` llança un petit _self-check_ de diagnòstic (`get_task_list`, `get_stack_wm` i `shell_cmd help`) just després d'instal·lar `zlink`. Si prefereixes arrencada neta:
+Si vols aturar l'execució al bootloader (`0x0000`), fes servir:
 
 ```bash
-./scripts/setup_openmsx.sh ztick --no-self-check
+./scripts/setup_openmsx.sh ztick --bp-bootloader
+```
+
+Si vols observar les escriptures I/O del port configurat al target, activa:
+
+```bash
+./scripts/setup_openmsx.sh ztick --watch-io
+```
+
+Per defecte, `setup_openmsx.sh` no executa cap _self-check_. Si vols les comprovacions de diagnòstic (`get_task_list`, `get_stack_wm` i `shell_cmd help`) després d'instal·lar `zlink`, afegeix:
+
+```bash
+./scripts/setup_openmsx.sh ztick --self-check
 ```
 
 ## Shell `xsh`
@@ -402,16 +428,10 @@ Comandes disponibles:
     * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
     * `ipc`: `q_used`, `q_cap`
 
-Després del boot, les tasks es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1` als targets inclosos). La task `c` es pot arrencar sota demanda amb:
+Després del boot, les tasks `xsh`, `b` i `c` es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1 c:3` als targets inclosos). La task `rchk` es pot arrencar sota demanda amb:
 
 ```tcl
-zlink_dev::shell_cmd "start b"
-zlink_dev::shell_cmd "start c"
-zlink_dev::shell_cmd "start b 3"
 zlink_dev::shell_cmd "start rchk safe"
-zlink_dev::shell_cmd "weight 1 2"
-zlink_dev::shell_cmd "stop b"
-zlink_dev::shell_cmd "stop c"
 ```
 
 Des de la consola Tcl d'openMSX, es pot injectar una comanda de shell via:

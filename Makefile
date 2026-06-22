@@ -8,14 +8,6 @@ TARGET_MANIFEST = targets/$(TARGET).mk
 include $(TARGET_MANIFEST)
 
 IMAGE_LAYOUT ?= flat64
-BOOT_PSR_TRANSITION ?= $(BOOT_PSR_VALUE)
-STARTUP_ENTRY ?= 0x0000
-ifeq ($(IMAGE_LAYOUT),flash2x64)
-STARTUP_CONFIGURE_PSR_DEFAULT = 0
-else
-STARTUP_CONFIGURE_PSR_DEFAULT = 1
-endif
-STARTUP_CONFIGURE_PSR ?= $(STARTUP_CONFIGURE_PSR_DEFAULT)
 BOOT_AUTOSTART ?=
 BOOT_AUTOSTART_STRICT ?= 1
 
@@ -76,11 +68,8 @@ $(BUILD_DIR)/target_boot.inc: setup
 	@printf "PPI_CTRL_PORT = %s\n" "$(PPI_CTRL_PORT)" >> $@
 	@printf "PPI_PSR_PORT = %s\n" "$(PPI_PSR_PORT)" >> $@
 	@printf "PPI_CTRL_VALUE = %s\n" "$(PPI_CTRL_VALUE)" >> $@
-	@printf "BOOT_PSR_TRANSITION = %s\n" "$(BOOT_PSR_TRANSITION)" >> $@
 	@printf "BOOT_PSR_VALUE = %s\n" "$(BOOT_PSR_VALUE)" >> $@
 	@printf "BOOT_MARKER_VALUE = %s\n" "$(BOOT_MARKER_VALUE)" >> $@
-	@printf "STARTUP_ENTRY = %s\n" "$(STARTUP_ENTRY)" >> $@
-	@printf "STARTUP_CONFIGURE_PSR = %s\n" "$(STARTUP_CONFIGURE_PSR)" >> $@
 
 $(BUILD_DIR)/target_autostart.h: setup
 	@count=0; \
@@ -160,9 +149,8 @@ $(BUILD_DIR)/target_rchk.h: setup
 
 bootstrap: $(BUILD_DIR)/target_boot.inc $(BUILD_DIR)/target_autostart.h $(BUILD_DIR)/target_rchk.h
 ifeq ($(IMAGE_LAYOUT),flash2x64)
-	@echo ">> Building firmware: bootloader+startup (128KB flash image) [TARGET=$(TARGET)]"
-	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/bootloader.rel $(SRC_DIR)/bootstrap/bootloader.s
-	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/startup_reset.rel $(SRC_DIR)/bootstrap/startup.s
+	@echo ">> Building firmware: startup (flash2x64 compatibility image) [TARGET=$(TARGET)]"
+	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/startup.rel $(SRC_DIR)/bootstrap/startup.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/rtos_asm.rel $(SRC_DIR)/bootstrap/rtos.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
@@ -178,23 +166,18 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 		-Wl-b_CODE=$(ADDR_CODE) \
 		--data-loc $(ADDR_DATA) \
 		-Wl-g__STACK_START=$(ADDR_STACK) \
-		$(BUILD_DIR)/startup_reset.rel \
+		$(BUILD_DIR)/startup.rel \
 		$(COMMON_REL_OBJECTS) \
 		-o $(BIN_DIR)/startup.ihx
 	makebin -s $(ROM_BANK_SIZE) $(BIN_DIR)/startup.ihx $(BIN_DIR)/startup.rom
+	cp $(BIN_DIR)/startup.rom $(BIN_DIR)/bootloader.rom
 	head -c 32768 $(BIN_DIR)/startup.rom > $(BIN_DIR)/startup_slot01.rom
-	$(CC) $(FAMILY) --no-std-crt0 \
-		-Wl-b_CODE=0x0000 \
-		-Wl-g__STACK_START=$(ADDR_STACK) \
-		$(BUILD_DIR)/bootloader.rel \
-		-o $(BIN_DIR)/bootloader.ihx
-	makebin -s $(ROM_BANK_SIZE) $(BIN_DIR)/bootloader.ihx $(BIN_DIR)/bootloader.rom
 	head -c 32768 $(BIN_DIR)/bootloader.rom > $(BIN_DIR)/bootloader_slot01.rom
 	cat $(BIN_DIR)/bootloader.rom $(BIN_DIR)/startup.rom > $(BIN_DIR)/$(ROM_IMAGE_NAME)
-	@echo ">> Success: bootloader bank + startup bank generated"
+	@echo ">> Success: startup image generated"
 else
 	@echo ">> Building firmware: bootstrap (single 64KB image) [TARGET=$(TARGET)]"
-	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/startup_reset.rel $(SRC_DIR)/bootstrap/startup.s
+	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/startup.rel $(SRC_DIR)/bootstrap/startup.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/rtos_asm.rel $(SRC_DIR)/bootstrap/rtos.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/vdp.rel $(SRC_DIR)/drivers/vdp.s
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/io_asm.rel $(SRC_DIR)/drivers/io.s
@@ -210,7 +193,7 @@ else
 		-Wl-b_CODE=$(ADDR_CODE) \
 		--data-loc $(ADDR_DATA) \
 		-Wl-g__STACK_START=$(ADDR_STACK) \
-		$(BUILD_DIR)/startup_reset.rel \
+		$(BUILD_DIR)/startup.rel \
 		$(COMMON_REL_OBJECTS) \
 		-o $(BIN_DIR)/bootstrap.ihx
 	makebin -s $(ROM_BANK_SIZE) $(BIN_DIR)/bootstrap.ihx $(BIN_DIR)/$(ROM_IMAGE_NAME)

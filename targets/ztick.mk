@@ -17,12 +17,11 @@ IO_DEFAULT_PORT = 0x3A
 PPI_CTRL_PORT = 0xAB
 PPI_PSR_PORT = 0xA8
 PPI_CTRL_VALUE = 0x82
-BOOT_PSR_TRANSITION = 0x50
 BOOT_PSR_VALUE = 0x50
 BOOT_MARKER_VALUE = 0x5A
 
 # Boot-time autostart list: <task_name>:<weight>
-BOOT_AUTOSTART = xsh:2 b:1
+BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
