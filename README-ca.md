@@ -1,20 +1,20 @@
-# Notes de disseny
-El sistema MSX està basat en un maquinari que respon a una arquitectura estàndard. És relativament senzill i està pensat per arrencar software de consum, bàsicament jocs.
-A meitat de camí entre un experiment excèntric i un desafiament personal, volem dur a terme un projecte que faci que un sistema MSX faci:
+# Introducció
+Els sistemes MSX van aparèixer el 1983 i estaven basats en un processador Zilog Z80 i estaven basats en un maquinari amb una arquitectura estàndard. Aquests sistemes eren relativament senzills i estaven pensats per arrencar software de consum, bàsicament jocs.
 
-* L'establiment d'un canal de comunicació amb sistemes externs, que permet la transmissió de dades entre el port d'expansió MSX i un port USB
+A meitat de camí entre un experiment excèntric i un desafiament personal, volem dur a terme un projecte que faci que sigui possible, en última instància, establir una plataforma per avaluar problemes de maquinari del propi MSX, executar, monitoritzar i transferir dades amb sistemes externs moderns.
+
 * L'execució de processos executats per multiplexació per temps basats en el senyal d'interrupció nadiu de MSX (VDP) cada 20 ms (50 Hz): un sistema operatiu de temps real (RTOS)
+* L'establiment d'un canal de comunicació amb sistemes externs, que permet la transmissió de dades entre el port d'expansió MSX i un port USB
+* Permetre l'ampliació de nous processos i funcionalitats, monitoritzats des de sistemes moderns.
 
-Dividim el projecte en dues fases de desenvolupament que poden dur-se a terme de manera independent. D'una banda, el programari que permetrà les característiques plantejades i de l'altra, el desenvolupament de la interfície de maquinari (i el seu programari associat) que haurà de permetre la pretesa comunicació.
-
-En última instància, el projecte pretén establir una plataforma per avaluar problemes de maquinari del propi MSX, executar, monitoritzar i transferir dades amb sistemes externs moderns.
+Dividim el projecte en dues fases de desenvolupament que poden dur-se a terme de manera independent. D'una banda, el programari que permetrà les característiques plantejades i de l'altra, el desenvolupament de la interfície de maquinari (i el seu programari associat) que haurà de permetre la pretesa comunicació. La secció `zbridge` conté informació sobre el disseny de la interfície de hardware desenvolupat i el seu programari.
 
 ## Arquitectura del MSX
 En primer lloc, cal conèixer els principis bàsics de funcionament d'un sistema MSX. Una mirada superficial apreciarà els aspectes més evidents, com ara la simplicitat de funcionament. Tanmateix, la seva aparent simplicitat imposa fortes restriccions a l'hora d'assolir els objectius previstos.
 
 Aquests sistemes estaven pensats per executar programes de manera directa i de forma ràpida. Després d'un _power on_, el MSX executa una fase de _startup_ de codi ubicat en una ROM. Aquest processador sempre llegeix la primera instrucció a l'adreça `0x0000`. És a dir, el primer codi que llegeix és a les primeres adreces. Aquest conté rutines que només s'executen en el moment del _startup_ i també d'altres que poden executar-se en una fase posterior per altres programes. Les tasques que es duen a terme durant aquesta fase inicial són bàsicament la inicialització del maquinari i tests de memòria RAM.
 
-Els sistemes MSX van aparèixer el 1983 i estaven basats en un processador Zilog Z80. Aquest processador té un bus de dades de 8 bits i un d'adreces de 16 bits. En conseqüència, pot accedir a 65536 adreces de memòria. Els sistemes MSX venien equipats amb entre 16KB i 64KB de memòria RAM, però podien ser ampliats en recursos i per tant, accedir a més de 64KB de memòria. Els enginyers que van crear el MSX varen incorporar una funció que permet exposar rangs d'adreces de memòria _visibles_ pel processador a maquinari extern. El que van fer és crear els conceptes d'_slots_ i _pages_. La idea és presentar al Z80 un **espai d'adreces** com interfície única d'intercanvi d'informació (instruccions o dades) amb l'exterior. No hem de confondre aquest espai d'adreces amb una memòria física concreta, sinó més aviat com una capa d'abstracció. Aquest espai està dividit en 4 subespais anomenats _pages_, que consten d'un interval d'adreces consecutives de 16KB cadascun:
+El processador Z80 té un bus de dades de 8 bits i un d'adreces de 16 bits. En conseqüència, pot accedir a 65536 adreces de memòria. Els sistemes MSX venien equipats amb entre 16KB i 64KB de memòria RAM, però podien ser ampliats en recursos i per tant, accedir a més de 64KB de memòria. Els enginyers que van crear el MSX varen incorporar una funció que permet exposar rangs d'adreces de memòria _visibles_ pel processador a maquinari extern. El que van fer és crear els conceptes d'_slots_ i _pages_. La idea és presentar al Z80 un **espai d'adreces** com interfície única d'intercanvi d'informació (instruccions o dades) amb l'exterior. No hem de confondre aquest espai d'adreces amb una memòria física concreta, sinó més aviat com una capa d'abstracció. Aquest espai està dividit en 4 subespais anomenats _pages_, que consten d'un interval d'adreces consecutives de 16KB cadascun:
 
 | Pàgina | Interval d'adreces |
 |:---|:---|
@@ -93,15 +93,15 @@ El Philips VG-8010 conté un únic _slot_ intern. Els _slots_ 1 i 2 són extern 
 | 2 | `0x8000-0xBFFF` | RAM |
 | 3 | `0xC000-0xFFFF` | RAM |
 
-## Disseny del Sistema Operatiu
-Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flash i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flash i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flash proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flash pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tots el programari necessari sense necessitar la RAM integrada.
+# Disseny del Sistema Operatiu
+Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flaix i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flaix i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flaix proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flaix pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tots el programari necessari sense necessitar la RAM integrada.
 
-Aquesta nova targeta està basada en la memòria flash multi propòsit SST39SF010A de tipus CMOS. Té una capacitat de 1048576 bits amb bus d'accés de dades de 8 bits. L'espai adreçable és de 17 bits, que permet reservar dos espais adjacents de 65536 bits (64KB). Concretament:
+Aquesta nova targeta està basada en la memòria flaix multi propòsit [39SF010A](https://ww1.microchip.com/downloads/aemDocuments/documents/MPD/ProductDocuments/DataSheets/SST39SF010A-SST39SF020A-SST39SF040-Data-Sheet-DS20005022.pdf) de tipus CMOS. Té una capacitat de 1048576 bits amb bus d'accés de dades de 8 bits. L'espai adreçable és de 17 bits, que permet reservar dos espais adjacents de 65536 bits (64KB). Concretament:
 
 * De `0x00000` a `0x0FFFF` : `bootloader` seleccionat quan el senyal `ROM_OE` és generat
 * De `0x10000` a `0x1FFFF` : `startup`, RTOS i processos d'usuari
 
-# `zlink`
+## `zlink`
 El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O amb Z80. No incorpora cap interfície de maquinari que permeti detectar l'arribada de dades noves i activar interrupcions especialitzades. Per resoldre-ho, fem servir un protocol de capa d'enllaç anomenat `zlink`, situat sota `zbus`, per resoldre RX sense senyals de tipus `DATA_READY`.
 
 Per tal de detectar la disponibilitat d'una trama nova respecte una ja processada, `zlink` fa servir número de seqüència (`SEQ`). També permet multiplexar diversos canals tipus `TTY`, en concret del `TTY0` al `TTY15`.
@@ -129,7 +129,7 @@ La longitud total de la trama es troba entre 5 i 69 _bytes_. El MSX inicia cada 
 
 `zlink` és deliberadament asimètric. El costat MSX no pot observar directament l'estat de disponibilitat del bridge (`RXF#`/`TXE#`) ni disposa d'un senyal de tipus `DATA_READY`, de manera que la recepció `host -> MSX` es basa en `POLL` periòdic del MSX (`POLL -> DATA|EMPTY`). Tot i que el host sí que pot tenir aquests senyals, aquesta informació no és visible pel MSX i, per tant, el protocol prioritza simplicitat i robustesa al costat MSX en lloc de forçar una simetria completa.
 
-# `zbus`
+## `zbus`
 `zbus` és la capa superior a `zlink`: gestiona la semàntica de canals, l'aïllament entre tasques i les cues RX/TX. Mentre `zlink` només transporta trames, `zbus` decideix a qui pertany cada `TTY`, quan s'hi poden afegir dades a la cua i com es lliuren al consumidor.
 
 Funcionament explícit de la capa:
@@ -251,7 +251,69 @@ Només s'accepta l'opcode `07`; l'opcode antic `04` ja no existeix.
   - `zlink_dev::get_stack_wm` / `zlink::get_stack_wm`
   - `zlink_dev::get_stack_wm <task_id>` / `zlink::get_stack_wm <task_id>`
 
-# IPC
+## Shell `xsh`
+La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_xsh`. En arrencar, mostra el prompt:
+
+```text
+Z-Tick xsh
+ztick> 
+```
+
+Funcionalitat implementada (estat actual del codi):
+
+* Auto-adjunta el `tty` actual via `zbus_tty_get_current()`.
+* Entrada interactiva amb eco:
+  * caràcters ASCII imprimibles (`32..126`)
+  * `Backspace`/`Delete` amb esborrat visual
+  * `CR`/`LF` per executar comanda
+* Línia màxima d'entrada: `55` caràcters útils (`XSH_LINE_MAX=56`, 1 byte reservat per `\0`).
+* Parser simple separat per espais (sense cometes/escape), amb màxim de 3 tokens totals (`XSH_ARGV_MAX=3`).
+* Si la comanda no existeix: `unknown command`.
+* Si la sintaxi és invàlida: mostra la línia `usage` de la comanda.
+
+Comandes disponibles:
+
+* `help`: Mostra: `commands: help cfg tasks start stop weight heap stack stats`
+* `cfg`: Mostra la configuració compilada (`max_tasks`, `task_heap`, paràmetres `zbus`, etc.).
+* `tasks [task_id]`: Sense arguments: compta tasks actives i mostra `task <id> name=<nom>`. Amb `task_id`: mostra detall `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
+* `start <task_name> [weight]`: Arrenca una task del registre (`task_registry`), actualment `b`, `c` i `rchk`. El paràmetre `weight` opcional a rang `1..3`.
+* `stop <task_name>`: Sol·licita parada d'una task en execució.
+* `weight <task_id> <1..3>`: Canvia el pes de planificació d'una task.
+* `heap [task_id]`: Mostra estat de heap per task: `free`, `free_blocks`, `used_blocks`.
+* `stack [task_id]`: Mostra mètriques de stack: `size`, `peak`, `free_peak`, `current`.
+* `stats`: Mostra 3 blocs:
+    * `zbus`: `tx_drop`, `rx_overflow`, `attach_fail`
+    * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
+    * `ipc`: `q_used`, `q_cap`
+
+Després del boot, les tasks `xsh`, `b` i `c` es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1 c:3` als targets inclosos). La task `rchk` es pot arrencar sota demanda amb:
+
+```tcl
+zlink_dev::shell_cmd "start rchk safe"
+```
+
+Des de la consola Tcl d'openMSX, es pot injectar una comanda de shell via:
+
+```tcl
+zlink_dev::shell_cmd help
+zlink_dev::shell_cmd "tasks"
+zlink_dev::shell_cmd "stack 0"
+zlink_dev::shell_cmd "help" 0 auto -decode 1
+```
+
+Equivalent en brut (sense helper):
+
+```tcl
+zlink_dev::queue_text 0 "help\r"
+```
+
+Per desactivar la decodificació textual:
+
+```tcl
+zlink_dev::shell_cmd "help" 0 auto -decode 0
+```
+
+## IPC
 L'objectiu de l'IPC és oferir un mecanisme mínim, previsible i de baix cost per coordinar tasques i intercanviar dades dins del sistema, així com evitar esperes actives i mantenint el sistema reactiu sota càrrega.
 
 El mòdul IPC es construeix amb dues primitives:
@@ -279,6 +341,46 @@ Integració amb el scheduler:
 
 En resum, aquest IPC és la base de missatgeria interna del sistema: prou simple per ser robusta en Z80 i prou expressiva per construir canals entre tasks sense acoblament fort.
 
+# Zbridge
+Segons els requeriments establerts en aquest projecte, és necessari desenvolupar una interfície de maquinari entre el _host_ i el sistema MSX. L'objectiu és que aquesta interfície detecti l'arribada d'una operació IO de Z80 sobre un número de port arbitrari. També ha de fixar els valors dels senyals de control del mòdul bus paral·lel a USB. En particular, farem servir un mòdul basat en l'integrat [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf). Tot plegat, sense modificar el maquinari.
+
+Es tracta d'una targeta connectada al port d'expansió o _cartridge_ que tots els sistemes MSX tenen. Aquest port conté tots els senyals necessaris per enviar i rebre les trames `zlink` entre el MSX i el _host_. El detall del circuit serà incorporat en un futur.
+
+La solució que hem triat implementa una màquina d'estats finits (FSM), també amb la flaix 39SF010A. La idea és que aquesta FSM detecti l'arribada d'una operació IO de Z80 sobre un número de port programable. Aquesta entrada situa la FSM en un estat tal que genera les sortides de control per activar la lectura o escriptura d'un _byte_ des del FIFO del FT245. Aquesta solució permet configurar tots els paràmetres de partida amb xips barats. En principi també seria possible implementar-ho amb solucions basades en dispositius lògics programables (PLD), com ara FPGA o CPLD. Tanmateix, la programació de dispositius PLD requereix de certes eines de programari i estar familiaritzat amb els seus llenguatges de programació.
+
+La programació d'aquesta FSM exigeix desenvolupar un compilador personalitzat per generar les imatges que plantxarem a la flaix. El directori `zbridge` conté aquest compilador (`compile_fsm.py`). Com que és una FSM molt senzilla, no cal introduir codi font. La imatge es genera a partir dels paràmetres de l'arxiu de _target_ (o del port indicat directament). Les lògiques de bits i polaritat no són configurables.
+
+Cada target té el seu propi port a `IO_DEFAULT_PORT` dins `targets/<nom>.mk`, així que l'ús recomanat és llegir-lo directament del manifest (evita haver de repetir el número de port a mà i queda sincronitzat si mai canvia):
+
+```bash
+python3 zbridge/compile_fsm.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
+```
+
+O indicant el port manualment:
+
+```bash
+python3 zbridge/compile_fsm.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
+```
+
+Si no es passa ni `--target` ni `--port`, s'utilitza el valor de _fallback_ intern del compilador (`0x38`), que només coincideix amb el port de `vg-8010` per casualitat i no s'ha d'assumir vàlid per a altres targets:
+
+```bash
+python3 zbridge/compile_fsm.py
+```
+
+També es poden generar formats addicionals, útils per depurar o simular la FSM abans de gravar-la:
+
+```bash
+python3 zbridge/compile_fsm.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
+```
+
+Opcions disponibles:
+
+* `-o, --out-bin <path>`: fitxer de sortida binari, 128 KiB (per defecte `zbridge_fsm.bin`). Conté la imatge real de 64 KiB duplicada a la meitat superior, ja que `A16` va lligat a 0V a la placa; el duplicat és necessari perquè programadors d'EEPROM com `minipro` l'acceptin sense avisos de mida incorrecta.
+* `--out-hex <path>` (opcional): també escriu la imatge en format Intel HEX.
+* `--out-logisim <path>` (opcional): també escriu una imatge Logisim-evolution (`v2.0 raw`) de només 64 KiB, sense duplicar, per carregar-la al component ROM amb "Load Image...".
+* `--port <n>`: port d'E/S de MSX a decodificar directament (accepta notació `0x..`). Per defecte `0x38` si no es passa ni `--port` ni `--target`.
+* `--target <nom>`: llegeix `IO_DEFAULT_PORT` directament de `targets/<nom>.mk` en lloc de `--port`. Mútuament exclusiu amb `--port`.
 
 # Compilació
 El projecte utilitza SDCC (`sdcc`) i l'assembler `sdasz80`. SDCC és una suite de compilador de C estàndard (ANSI C89, ISO C99, ISO C11, ISO C23), retargetable i optimitzadora, orientada als microprocessadors Intel basats en MCS51 (8031, 8032, 8051, 8052, etc.), variants DS80C390 de Maxim (abans Dallas), microcontroladors Freescale basats en HC08 (abans Motorola) (hc08, s08), MCUs Zilog basats en Z80 (Z80, Z80N, Z180, SM83, Rabbit 2000, 2000A, 3000A, SM83, TLCS-90, eZ80, R800), Padauk (pdk14, pdk15), STM8 de STMicroelectronics, MOS 6502 i WDC 65C02.
@@ -391,66 +493,4 @@ Per defecte, `setup_openmsx.sh` no executa cap _self-check_. Si vols les comprov
 
 ```bash
 ./scripts/setup_openmsx.sh ztick --self-check
-```
-
-## Shell `xsh`
-La shell (`xsh`) s'executa al task registrat com `xsh` sobre el seu `tty` (`zbus`). El seu punt d'entrada és `_main_xsh`. En arrencar, mostra el prompt:
-
-```text
-Z-Tick xsh
-ztick> 
-```
-
-Funcionalitat implementada (estat actual del codi):
-
-* Auto-adjunta el `tty` actual via `zbus_tty_get_current()`.
-* Entrada interactiva amb eco:
-  * caràcters ASCII imprimibles (`32..126`)
-  * `Backspace`/`Delete` amb esborrat visual
-  * `CR`/`LF` per executar comanda
-* Línia màxima d'entrada: `55` caràcters útils (`XSH_LINE_MAX=56`, 1 byte reservat per `\0`).
-* Parser simple separat per espais (sense cometes/escape), amb màxim de 3 tokens totals (`XSH_ARGV_MAX=3`).
-* Si la comanda no existeix: `unknown command`.
-* Si la sintaxi és invàlida: mostra la línia `usage` de la comanda.
-
-Comandes disponibles:
-
-* `help`: Mostra: `commands: help cfg tasks start stop weight heap stack stats`
-* `cfg`: Mostra la configuració compilada (`max_tasks`, `task_heap`, paràmetres `zbus`, etc.).
-* `tasks [task_id]`: Sense arguments: compta tasks actives i mostra `task <id> name=<nom>`. Amb `task_id`: mostra detall `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
-* `start <task_name> [weight]`: Arrenca una task del registre (`task_registry`), actualment `b`, `c` i `rchk`. El paràmetre `weight` opcional a rang `1..3`.
-* `stop <task_name>`: Sol·licita parada d'una task en execució.
-* `weight <task_id> <1..3>`: Canvia el pes de planificació d'una task.
-* `heap [task_id]`: Mostra estat de heap per task: `free`, `free_blocks`, `used_blocks`.
-* `stack [task_id]`: Mostra mètriques de stack: `size`, `peak`, `free_peak`, `current`.
-* `stats`: Mostra 3 blocs:
-    * `zbus`: `tx_drop`, `rx_overflow`, `attach_fail`
-    * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
-    * `ipc`: `q_used`, `q_cap`
-
-Després del boot, les tasks `xsh`, `b` i `c` es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1 c:3` als targets inclosos). La task `rchk` es pot arrencar sota demanda amb:
-
-```tcl
-zlink_dev::shell_cmd "start rchk safe"
-```
-
-Des de la consola Tcl d'openMSX, es pot injectar una comanda de shell via:
-
-```tcl
-zlink_dev::shell_cmd help
-zlink_dev::shell_cmd "tasks"
-zlink_dev::shell_cmd "stack 0"
-zlink_dev::shell_cmd "help" 0 auto -decode 1
-```
-
-Equivalent en brut (sense helper):
-
-```tcl
-zlink_dev::queue_text 0 "help\r"
-```
-
-Per desactivar la decodificació textual:
-
-```tcl
-zlink_dev::shell_cmd "help" 0 auto -decode 0
 ```

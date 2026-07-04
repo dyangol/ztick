@@ -1,20 +1,20 @@
 # Design Notes
-The MSX system is based on hardware that follows a standard architecture. It is relatively simple and was designed to boot consumer software, mainly games.
-Halfway between an eccentric experiment and a personal challenge, we want to carry out a project that makes an MSX system provide:
+MSX systems appeared in 1983 and were based on a Zilog Z80 processor, built on hardware that followed a standard architecture. These systems were relatively simple and were designed to boot consumer software, mainly games.
 
-* A communication channel with external systems, enabling data transfer between the MSX expansion port and a USB port
+Halfway between an eccentric experiment and a personal challenge, we want to carry out a project that ultimately makes it possible to establish a platform to evaluate MSX hardware issues, run, monitor, and transfer data with modern external systems, by having an MSX system provide:
+
 * Process execution through time multiplexing based on the native MSX interrupt signal (VDP) every 20 ms (50 Hz): a real-time operating system (RTOS)
+* A communication channel with external systems, enabling data transfer between the MSX expansion port and a USB port
+* Support for adding new processes and functionality, monitored from modern systems.
 
-We split the project into two development phases that can be carried out independently. On one side, the software that will provide the proposed features; on the other, the hardware interface development (and its associated software) that will enable the intended communication.
-
-Ultimately, the project aims to establish a platform to evaluate MSX hardware issues, execute and monitor tasks, and transfer data with modern external systems.
+We split the project into two development phases that can be carried out independently. On one side, the software that will provide the proposed features; on the other, the hardware interface development (and its associated software) that will enable the intended communication. The `zbridge` section contains information about the design of the hardware interface developed and its software.
 
 ## MSX Architecture
 First, we need to understand the basic operating principles of an MSX system. A superficial look highlights obvious aspects such as operational simplicity. However, this apparent simplicity imposes strong constraints when trying to achieve the proposed goals.
 
 These systems were designed to execute programs directly and quickly. After power-on, the MSX executes a startup phase from code located in ROM. This processor always reads the first instruction at address `0x0000`. In other words, the first code it reads is at the first addresses. That code contains routines that run only during startup, and others that can run later for other programs. Tasks performed during this initial phase are mainly hardware initialization and RAM tests.
 
-MSX systems appeared in 1983 and were based on a Zilog Z80 processor. This processor has an 8-bit data bus and a 16-bit address bus. Consequently, it can access 65,536 memory addresses. MSX systems shipped with between 16 KB and 64 KB of RAM, but could be expanded with additional resources and therefore access more than 64 KB. The engineers who created the MSX introduced a feature that exposes memory address ranges _visible_ to the processor on external hardware. They created the concepts of _slots_ and _pages_. The idea is to present the Z80 with an **address space** as a single interface for exchanging information (instructions or data) with the outside world. We should not confuse this address space with a specific physical memory, but rather see it as an abstraction layer. This space is divided into 4 subspaces called _pages_, each covering a contiguous 16 KB address range:
+The Z80 processor has an 8-bit data bus and a 16-bit address bus. Consequently, it can access 65,536 memory addresses. MSX systems shipped with between 16 KB and 64 KB of RAM, but could be expanded with additional resources and therefore access more than 64 KB. The engineers who created the MSX introduced a feature that exposes memory address ranges _visible_ to the processor on external hardware. They created the concepts of _slots_ and _pages_. The idea is to present the Z80 with an **address space** as a single interface for exchanging information (instructions or data) with the outside world. We should not confuse this address space with a specific physical memory, but rather see it as an abstraction layer. This space is divided into 4 subspaces called _pages_, each covering a contiguous 16 KB address range:
 
 | Page | Address Range |
 |:---|:---|
@@ -84,16 +84,24 @@ In this case, Sony reserved a full internal slot (_slot 2_) for RAM to reach 64 
 | 2 | `0x8000-0xBFFF` | RAM |
 | 3 | `0xC000-0xFFFF` | RAM |
 
+The Philips VG-8010 has a single internal slot. Slots 1 and 2 are external (expansion). _Slot 0_ has this map:
 
-## Operating System Design
+| Page | Address Range | Resource |
+|:---|:---|:---|
+| 0 | `0x0000-0x3FFF` | ROM |
+| 1 | `0x4000-0x7FFF` | ROM |
+| 2 | `0x8000-0xBFFF` | RAM |
+| 3 | `0xC000-0xFFFF` | RAM |
+
+# Operating System Design
 One of the first project decisions is replacing the original ROM with a new one that includes basic boot routines. To facilitate development cycles on original hardware, we design a new expansion board that includes both flash memory and RAM, since EPROM/EEPROM memories are significantly more expensive than flash and store less data. This board is installed in a cartridge slot. But if we want this flash to provide startup code to the Z80, we must remove the original ROM and intercept the ROM selection signal, because _slot 0_ is active when the MSX experiences power-on. The code stored in flash can perform memory switching to expose RAM pages from the same board. In other words, it becomes possible to run all required software without relying on integrated RAM.
 
-This new board is based on the SST39SF010A multipurpose CMOS flash memory. It has a capacity of 1,048,576 bits with an 8-bit data access bus. The address space is 17 bits, allowing two adjacent spaces of 65,536 bits (64 KB) each. Specifically:
+This new board is based on the [39SF010A](https://ww1.microchip.com/downloads/aemDocuments/documents/MPD/ProductDocuments/DataSheets/SST39SF010A-SST39SF020A-SST39SF040-Data-Sheet-DS20005022.pdf) multipurpose CMOS flash memory. It has a capacity of 1,048,576 bits with an 8-bit data access bus. The address space is 17 bits, allowing two adjacent spaces of 65,536 bits (64 KB) each. Specifically:
 
 * From `0x00000` to `0x0FFFF`: `bootloader` selected when `ROM_OE` is asserted
 * From `0x10000` to `0x1FFFF`: `startup`, RTOS and user processes
 
-# `zlink`
+## `zlink`
 The MSX system has limitations for transferring and receiving I/O data with the Z80. It does not include a hardware interface able to detect incoming data and trigger specialized interrupts. To solve this, we use a link-layer protocol called `zlink`, under `zbus`, to handle RX without `DATA_READY`-type signals.
 
 To detect availability of a new frame versus one already processed, `zlink` uses a sequence number (`SEQ`). It also multiplexes multiple `TTY` channels, specifically from `TTY0` to `TTY15`.
@@ -121,7 +129,7 @@ Total frame length is between 5 and 69 bytes. The MSX starts each receive cycle 
 
 `zlink` is deliberately asymmetric. The MSX side cannot directly observe bridge availability signals (`RXF#`/`TXE#`) and has no `DATA_READY`-type signal, so host -> MSX reception is based on periodic MSX polling (`POLL -> DATA|EMPTY`). Even if the host may have those signals, this information is not visible to the MSX and therefore the protocol prioritizes simplicity and robustness on the MSX side instead of enforcing full symmetry.
 
-# `zbus`
+## `zbus`
 `zbus` is the layer above `zlink`: it handles channel semantics, task isolation, and RX/TX queues. While `zlink` only transports frames, `zbus` decides who owns each `TTY`, when data can be queued, and how it is delivered to consumers.
 
 Explicit layer behavior:
@@ -244,7 +252,69 @@ Only the `07` opcode is supported here; the legacy `04` opcode has been removed.
   - `zlink_dev::get_stack_wm` / `zlink::get_stack_wm`
   - `zlink_dev::get_stack_wm <task_id>` / `zlink::get_stack_wm <task_id>`
 
-# IPC
+## Shell `xsh`
+The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_xsh`. At startup, it shows this prompt:
+
+```text
+Z-Tick xsh
+ztick> 
+```
+
+Implemented functionality (current code state):
+
+* Auto-attaches to the current `tty` via `zbus_tty_get_current()`.
+* Interactive input with echo:
+  * printable ASCII characters (`32..126`)
+  * `Backspace`/`Delete` with visual erase
+  * `CR`/`LF` to execute command
+* Maximum input line length: `55` useful characters (`XSH_LINE_MAX=56`, 1 byte reserved for `\0`).
+* Simple space-separated parser (no quoting/escaping), with at most 3 total tokens (`XSH_ARGV_MAX=3`).
+* If a command does not exist: `unknown command`.
+* If syntax is invalid: shows command `usage` line.
+
+Available commands:
+
+* `help`: Shows `commands: help cfg tasks start stop weight heap stack stats`
+* `cfg`: Shows compiled configuration (`max_tasks`, `task_heap`, `zbus` parameters, etc.).
+* `tasks [task_id]`: Without args: counts active tasks and shows `task <id> name=<name>`. With `task_id`: shows details `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
+* `start <task_name> [weight]`: Starts a task from the registry (`task_registry`), currently `b`, `c` and `rchk`. Optional `weight` in range `1..3`.
+* `stop <task_name>`: Requests stop for a running task.
+* `weight <task_id> <1..3>`: Changes scheduling weight of a task.
+* `heap [task_id]`: Shows per-task heap status: `free`, `free_blocks`, `used_blocks`.
+* `stack [task_id]`: Shows stack metrics: `size`, `peak`, `free_peak`, `current`.
+* `stats`: Shows 3 blocks:
+  * `zbus`: `tx_drop`, `rx_overflow`, `attach_fail`
+  * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
+  * `ipc`: `q_used`, `q_cap`
+
+After boot, tasks `xsh`, `b`, and `c` are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1 c:3` in bundled targets). Task `rchk` can be started on demand with:
+
+```tcl
+zlink_dev::shell_cmd "start rchk safe"
+```
+
+From the openMSX Tcl console, you can inject a shell command via:
+
+```tcl
+zlink_dev::shell_cmd help
+zlink_dev::shell_cmd "tasks"
+zlink_dev::shell_cmd "stack 0"
+zlink_dev::shell_cmd "help" 0 auto -decode 1
+```
+
+Raw equivalent (without helper):
+
+```tcl
+zlink_dev::queue_text 0 "help\r"
+```
+
+To disable text decoding:
+
+```tcl
+zlink_dev::shell_cmd "help" 0 auto -decode 0
+```
+
+## IPC
 The goal of IPC is to provide a minimal, predictable, low-cost mechanism for coordinating tasks and exchanging data within the system, while avoiding busy waiting and keeping the system responsive under load.
 
 The IPC module is built around two primitives:
@@ -272,6 +342,46 @@ Integration with the scheduler:
 
 In summary, this IPC is the foundation of internal system messaging: simple enough to be robust on Z80, and expressive enough to build channels between tasks without tight coupling.
 
+# Zbridge
+According to this project's requirements, a hardware interface must be developed between the host and the MSX system. Its goal is to detect the arrival of a Z80 I/O operation on an arbitrary port number. It must also drive the control signal values of the parallel-bus-to-USB module. In particular, we will use a module based on the [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf) integrated circuit. All of this without modifying the hardware.
+
+This is a board connected to the expansion port (cartridge slot) that all MSX systems have. This port carries all the signals needed to send and receive `zlink` frames between the MSX and the host. Circuit details will be added in the future.
+
+The solution we chose implements a finite-state machine (FSM), also using the 39SF010A flash. The idea is that this FSM detects the arrival of a Z80 I/O operation on a programmable port number. This input places the FSM in a state that generates the control outputs needed to trigger reading or writing a byte from the FT245's FIFO. This solution allows configuring the starting parameters with cheap chips. In principle it would also be possible to implement this using programmable logic device (PLD) solutions such as FPGA or CPLD. However, programming PLD devices requires certain software tools and familiarity with their programming languages.
+
+Programming this FSM requires developing a custom compiler to generate the images that will be flashed. The `zbridge` directory contains this compiler (`compile_fsm.py`). Since this is a very simple FSM, there is no need to touch source code. The image is generated from the target file's parameters (or from a directly specified port). Bit logic and polarity are not configurable.
+
+Each target has its own port under `IO_DEFAULT_PORT` inside `targets/<name>.mk`, so the recommended usage is to read it directly from the manifest (avoids repeating the port number by hand, and stays in sync if it ever changes):
+
+```bash
+python3 zbridge/compile_fsm.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
+```
+
+Or specifying the port manually:
+
+```bash
+python3 zbridge/compile_fsm.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
+```
+
+If neither `--target` nor `--port` is given, the compiler's internal fallback value is used (`0x38`), which only coincidentally matches `vg-8010`'s port and should not be assumed valid for other targets:
+
+```bash
+python3 zbridge/compile_fsm.py
+```
+
+Additional formats can also be generated, useful for debugging or simulating the FSM before flashing it:
+
+```bash
+python3 zbridge/compile_fsm.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
+```
+
+Available options:
+
+* `-o, --out-bin <path>`: binary output file, 128 KiB (default `zbridge_fsm.bin`). Contains the real 64 KiB image mirrored into the upper half, since `A16` is tied to 0V on the board; the mirroring is required so EEPROM programmers like `minipro` accept it without size-mismatch warnings.
+* `--out-hex <path>` (optional): also writes the image in Intel HEX format.
+* `--out-logisim <path>` (optional): also writes a Logisim-evolution image (`v2.0 raw`) of just 64 KiB, unmirrored, to load into the ROM component via "Load Image...".
+* `--port <n>`: MSX I/O port to decode directly (accepts `0x..` notation). Defaults to `0x38` if neither `--port` nor `--target` is given.
+* `--target <name>`: reads `IO_DEFAULT_PORT` directly from `targets/<name>.mk` instead of `--port`. Mutually exclusive with `--port`.
 
 # Build
 The project uses SDCC (`sdcc`) and the `sdasz80` assembler. SDCC is a standard C compiler suite (ANSI C89, ISO C99, ISO C11, ISO C23), retargetable and optimizing, focused on Intel MCS51-based microprocessors (8031, 8032, 8051, 8052, etc.), Maxim DS80C390 variants (formerly Dallas), Freescale HC08-based microcontrollers (formerly Motorola) (hc08, s08), Zilog Z80-based MCUs (Z80, Z80N, Z180, SM83, Rabbit 2000, 2000A, 3000A, SM83, TLCS-90, eZ80, R800), Padauk (pdk14, pdk15), STMicroelectronics STM8, MOS 6502, and WDC 65C02.
@@ -384,66 +494,4 @@ By default, `setup_openmsx.sh` does not run any self-check. If you want the diag
 
 ```bash
 ./scripts/setup_openmsx.sh ztick --self-check
-```
-
-## Shell `xsh`
-The shell (`xsh`) runs in the task registered as `xsh` over its `tty` (`zbus`). Its entry point is `_main_xsh`. At startup, it shows this prompt:
-
-```text
-Z-Tick xsh
-ztick> 
-```
-
-Implemented functionality (current code state):
-
-* Auto-attaches to the current `tty` via `zbus_tty_get_current()`.
-* Interactive input with echo:
-  * printable ASCII characters (`32..126`)
-  * `Backspace`/`Delete` with visual erase
-  * `CR`/`LF` to execute command
-* Maximum input line length: `55` useful characters (`XSH_LINE_MAX=56`, 1 byte reserved for `\0`).
-* Simple space-separated parser (no quoting/escaping), with at most 3 total tokens (`XSH_ARGV_MAX=3`).
-* If a command does not exist: `unknown command`.
-* If syntax is invalid: shows command `usage` line.
-
-Available commands:
-
-* `help`: Shows `commands: help cfg tasks start stop weight heap stack stats`
-* `cfg`: Shows compiled configuration (`max_tasks`, `task_heap`, `zbus` parameters, etc.).
-* `tasks [task_id]`: Without args: counts active tasks and shows `task <id> name=<name>`. With `task_id`: shows details `state`, `tty`, `w` (weight), `b` (budget), `sp`, `name`.
-* `start <task_name> [weight]`: Starts a task from the registry (`task_registry`), currently `b`, `c` and `rchk`. Optional `weight` in range `1..3`.
-* `stop <task_name>`: Requests stop for a running task.
-* `weight <task_id> <1..3>`: Changes scheduling weight of a task.
-* `heap [task_id]`: Shows per-task heap status: `free`, `free_blocks`, `used_blocks`.
-* `stack [task_id]`: Shows stack metrics: `size`, `peak`, `free_peak`, `current`.
-* `stats`: Shows 3 blocks:
-  * `zbus`: `tx_drop`, `rx_overflow`, `attach_fail`
-  * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
-  * `ipc`: `q_used`, `q_cap`
-
-After boot, tasks `xsh`, `b`, and `c` are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1 c:3` in bundled targets). Task `rchk` can be started on demand with:
-
-```tcl
-zlink_dev::shell_cmd "start rchk safe"
-```
-
-From the openMSX Tcl console, you can inject a shell command via:
-
-```tcl
-zlink_dev::shell_cmd help
-zlink_dev::shell_cmd "tasks"
-zlink_dev::shell_cmd "stack 0"
-zlink_dev::shell_cmd "help" 0 auto -decode 1
-```
-
-Raw equivalent (without helper):
-
-```tcl
-zlink_dev::queue_text 0 "help\r"
-```
-
-To disable text decoding:
-
-```tcl
-zlink_dev::shell_cmd "help" 0 auto -decode 0
 ```
