@@ -17,7 +17,7 @@ IO_DEFAULT_PORT = 0x38
 PPI_CTRL_PORT = 0xAB
 PPI_PSR_PORT = 0xA8
 PPI_CTRL_VALUE = 0x82
-BOOT_PSR_VALUE = 0x55
+BOOT_PSR_VALUE = 0xAA
 BOOT_MARKER_VALUE = 0x5A
 
 # Boot-time autostart list: <task_name>:<weight>
