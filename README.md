@@ -101,6 +101,8 @@ This new board is based on the [39SF010A](https://ww1.microchip.com/downloads/ae
 * From `0x00000` to `0x0FFFF`: `bootloader` selected when `ROM_OE` is asserted
 * From `0x10000` to `0x1FFFF`: `startup`, RTOS and user processes
 
+At its core, `ztick` implements a very small preemptive RTOS, designed for the limited resources of a Z80. The scheduler's tick comes directly from the MSX's native VDP interrupt, which occurs every 20 ms (50 Hz). On each interrupt, the kernel saves the context of the running task, decides which task should run next, and resumes its execution. The algorithm is a weighted round-robin: each task has a `weight` (`1..3`) that determines how many consecutive ticks it keeps the CPU before yielding to the next ready task. Tasks can also block voluntarily while waiting on an IPC semaphore or queue; while blocked, the scheduler skips them without spending any CPU time on them. The maximum number of tasks is fixed and defined at compile time, and each one has its own fixed-size stack and heap reserved in advance. There is no dynamic resource allocation, which makes the system's behavior predictable and avoids fragmentation. Tasks are defined in a static registry and are started automatically at boot according to the target manifest (`BOOT_AUTOSTART`), or manually from the `xsh` shell (`start`/`stop`). Communication with external systems (the host) is handled at the `zlink`/`zbus` layers, described next.
+
 ## `zlink`
 The MSX system has limitations for transferring and receiving I/O data with the Z80. It does not include a hardware interface able to detect incoming data and trigger specialized interrupts. To solve this, we use a link-layer protocol called `zlink`, under `zbus`, to handle RX without `DATA_READY`-type signals.
 
@@ -343,36 +345,36 @@ Integration with the scheduler:
 In summary, this IPC is the foundation of internal system messaging: simple enough to be robust on Z80, and expressive enough to build channels between tasks without tight coupling.
 
 # Zbridge
-According to this project's requirements, a hardware interface must be developed between the host and the MSX system. Its goal is to detect the arrival of a Z80 I/O operation on an arbitrary port number. It must also drive the control signal values of the parallel-bus-to-USB module. In particular, we will use a module based on the [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf) integrated circuit. All of this without modifying the hardware.
+According to this project's requirements, a hardware interface must be developed between the host and the MSX system. Its goal is to detect the arrival of a Z80 I/O operation on an arbitrary port number. It must also drive the internal control signal values. In particular, we will use a module based on the [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf) integrated circuit. This hardware must allow modifying certain parameters, such as the port number and the control signal logic, without modifying the hardware itself.
 
-This is a board connected to the expansion port (cartridge slot) that all MSX systems have. This port carries all the signals needed to send and receive `zlink` frames between the MSX and the host. Circuit details will be added in the future.
+Zbridge is a board connected to the expansion port (cartridge slot) that all MSX systems have. This port carries all the signals needed to send and receive `zlink` frames between the MSX and the host. Circuit details will be added in the future.
 
-The solution we chose implements a finite-state machine (FSM), also using the 39SF010A flash. The idea is that this FSM detects the arrival of a Z80 I/O operation on a programmable port number. This input places the FSM in a state that generates the control outputs needed to trigger reading or writing a byte from the FT245's FIFO. This solution allows configuring the starting parameters with cheap chips. In principle it would also be possible to implement this using programmable logic device (PLD) solutions such as FPGA or CPLD. However, programming PLD devices requires certain software tools and familiarity with their programming languages.
+The solution we chose implements a finite-state machine (FSM), also using the 39SF010A flash. The idea is that this FSM detects the arrival of a Z80 I/O operation on a programmable port number. This input places the FSM in a state that generates the control outputs needed to trigger reading or writing a byte from the FT245's FIFO. This solution allows configuring all of the output parameters as a function of the input ones, using cheap chips. In principle it would also be possible to implement this using programmable logic device (PLD) solutions such as FPGA or CPLD. However, programming PLD devices requires certain software tools and familiarity with their programming languages.
 
-Programming this FSM requires developing a custom compiler to generate the images that will be flashed. The `zbridge` directory contains this compiler (`compile_fsm.py`). Since this is a very simple FSM, there is no need to touch source code. The image is generated from the target file's parameters (or from a directly specified port). Bit logic and polarity are not configurable.
+Programming this FSM requires developing a custom compiler to generate the images that will be flashed. The `zbridge` directory contains this compiler (`zbrc.py`). Since we only want to compile images for this particular FSM, the compiler does not need to process any user-supplied source code. The image is generated from the target file's parameters (or from a directly specified port). Bit logic and polarity are not configurable, though they can be changed by suitably editing `zbrc.py`. We do not aim to build a general-purpose FSM compiler. We therefore prioritize simplicity and minimal development time.
 
 Each target has its own port under `IO_DEFAULT_PORT` inside `targets/<name>.mk`, so the recommended usage is to read it directly from the manifest (avoids repeating the port number by hand, and stays in sync if it ever changes):
 
 ```bash
-python3 zbridge/compile_fsm.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
+python3 zbridge/zbrc.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
 ```
 
 Or specifying the port manually:
 
 ```bash
-python3 zbridge/compile_fsm.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
+python3 zbridge/zbrc.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
 ```
 
 If neither `--target` nor `--port` is given, the compiler's internal fallback value is used (`0x38`), which only coincidentally matches `vg-8010`'s port and should not be assumed valid for other targets:
 
 ```bash
-python3 zbridge/compile_fsm.py
+python3 zbridge/zbrc.py
 ```
 
-Additional formats can also be generated, useful for debugging or simulating the FSM before flashing it:
+Additional formats can also be generated, useful for debugging or simulating the FSM before flashing it. In particular, we can simulate its behavior with the [Logisim Evolution](https://github.com/logisim-evolution/logisim-evolution) tool. To generate an image this tool can load, run:
 
 ```bash
-python3 zbridge/compile_fsm.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
+python3 zbridge/zbrc.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
 ```
 
 Available options:

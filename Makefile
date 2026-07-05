@@ -20,12 +20,10 @@ BIN_DIR        = $(BIN_ROOT_DIR)/$(TARGET)
 ROM_BANK_SIZE = 65536
 
 GROUPS = bootstrap
-FSM_SPEC ?= scripts/fsm/examples/ft245_msx_bridge.json
-FSM_OUT_DIR ?= build/fsm
-FSM_OUT_BIN ?= $(FSM_OUT_DIR)/ft245_fsm.bin
-FSM_OUT_HEX ?= $(FSM_OUT_DIR)/ft245_fsm.hex
-FSM_OUT_LOGISIM ?= $(FSM_OUT_DIR)/ft245_fsm_logisim.mem
-FSM_OUT_BIN_128K ?= $(FSM_OUT_DIR)/ft245_fsm_39sf010a.bin
+FSM_OUT_DIR ?= zbridge/build
+FSM_OUT_BIN ?= $(FSM_OUT_DIR)/zbridge_fsm.bin
+FSM_OUT_HEX ?= $(FSM_OUT_DIR)/zbridge_fsm.hex
+FSM_OUT_LOGISIM ?= $(FSM_OUT_DIR)/zbridge_fsm.img
 
 all: setup $(GROUPS)
 
@@ -205,15 +203,13 @@ clean:
 	rm -rf $(BUILD_ROOT_DIR) $(BIN_ROOT_DIR)
 
 fsm:
-	@echo ">> Building FSM ROM image from $(FSM_SPEC)"
+	@echo ">> Building zbridge FSM ROM image for target $(TARGET)"
 	@mkdir -p $(FSM_OUT_DIR)
-	python3 scripts/fsm/compile_fsm.py \
-		$(FSM_SPEC) \
-		--out-bin $(FSM_OUT_BIN) \
+	python3 zbridge/zbrc.py \
+		--target $(TARGET) \
+		-o $(FSM_OUT_BIN) \
 		--out-hex $(FSM_OUT_HEX) \
-		--out-logisim $(FSM_OUT_LOGISIM) \
-		--mirror-39sf010a \
-		--out-bin-128k $(FSM_OUT_BIN_128K)
+		--out-logisim $(FSM_OUT_LOGISIM)
 	@echo ">> Success: FSM images written to $(FSM_OUT_DIR)"
 
 .PHONY: all setup clean fsm $(GROUPS)

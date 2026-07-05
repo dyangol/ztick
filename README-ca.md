@@ -94,12 +94,14 @@ El Philips VG-8010 conté un únic _slot_ intern. Els _slots_ 1 i 2 són extern 
 | 3 | `0xC000-0xFFFF` | RAM |
 
 # Disseny del Sistema Operatiu
-Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flaix i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flaix i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flaix proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flaix pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tots el programari necessari sense necessitar la RAM integrada.
+Una de les primeres decisions que incorpora el projecte és la substitució de la memòria ROM original per una de nova que incorpori les rutines bàsiques de _boot_. Per tal de facilitar els cicles de desenvolupament sobre hardware original, dissenyem una nova placa d'expansió que incorpori una memòria flaix i una de RAM, atès que les memòries EPROM o EEPROM són força més cares que les flaix i permeten emmagatzemar menys dades. Aquesta placa anirà instal·lada un _slot_ de _cartridge_. Però si volem que aquesta flaix proporcioni al Z80, el codi de _startup_ haurem d'extraure la ROM original i interceptar el senyal de sel·lecció de ROM, atès que el _slot 0_ és el que està activat quan en el MSX experimenta un _power on_. El codi que conté la pròpia flaix pot dur a terme un _memory switching_ per fer accessibles pàgines de RAM sobre la mateixa placa. És a dir, seria possible executar tot el programari sense necessitar la RAM integrada.
 
 Aquesta nova targeta està basada en la memòria flaix multi propòsit [39SF010A](https://ww1.microchip.com/downloads/aemDocuments/documents/MPD/ProductDocuments/DataSheets/SST39SF010A-SST39SF020A-SST39SF040-Data-Sheet-DS20005022.pdf) de tipus CMOS. Té una capacitat de 1048576 bits amb bus d'accés de dades de 8 bits. L'espai adreçable és de 17 bits, que permet reservar dos espais adjacents de 65536 bits (64KB). Concretament:
 
 * De `0x00000` a `0x0FFFF` : `bootloader` seleccionat quan el senyal `ROM_OE` és generat
 * De `0x10000` a `0x1FFFF` : `startup`, RTOS i processos d'usuari
+
+Al nucli, `ztick` implementa un RTOS preventiu de mida molt reduïda, pensat pels recursos limitats d'un Z80. El _tick_ del planificador prové directament de la interrupció nativa del VDP del MSX que s'esdevé cada 20 ms (50 Hz). A cada interrupció, el nucli desa el context de la tasca en execució, decideix quina tasca ha d'executar-se a continuació i continua la seva execució. L'algorisme és un _round-robin_ amb pesos: cada task té un `weight` (`1..3`) que determina quants _ticks_ consecutius manté la CPU abans de cedir el torn a la següent task preparada. Les tasques també poden bloquejar-se voluntàriament esperant un semàfor o una cua de l'IPC; mentre estan bloquejades, el planificador les salta sense consumir-hi temps de CPU. El nombre màxim de tasques és fix i es defineix en temps de compilació, i cadascuna té reservats per endavant el seu propi _stack_ i _heap_ de mida fixa. No hi ha reserva dinàmica de recursos, la qual cosa fa que el comportament del sistema sigui predictible i evita fragmentació. Les tasques es defineixen en un registre estàtic i s'arrenquen automàticament en el _boot_ segons el manifest del target (`BOOT_AUTOSTART`), o manualment des de la shell `xsh` (`start`/`stop`). La comunicació amb sistemes externs (el _host_) es gestiona als nivells `zlink`/`zbus`, descrits a continuació.
 
 ## `zlink`
 El sistema MSX presenta limitacions a l'hora de transferir i rebre dades per I/O amb Z80. No incorpora cap interfície de maquinari que permeti detectar l'arribada de dades noves i activar interrupcions especialitzades. Per resoldre-ho, fem servir un protocol de capa d'enllaç anomenat `zlink`, situat sota `zbus`, per resoldre RX sense senyals de tipus `DATA_READY`.
@@ -342,36 +344,36 @@ Integració amb el scheduler:
 En resum, aquest IPC és la base de missatgeria interna del sistema: prou simple per ser robusta en Z80 i prou expressiva per construir canals entre tasks sense acoblament fort.
 
 # Zbridge
-Segons els requeriments establerts en aquest projecte, és necessari desenvolupar una interfície de maquinari entre el _host_ i el sistema MSX. L'objectiu és que aquesta interfície detecti l'arribada d'una operació IO de Z80 sobre un número de port arbitrari. També ha de fixar els valors dels senyals de control del mòdul bus paral·lel a USB. En particular, farem servir un mòdul basat en l'integrat [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf). Tot plegat, sense modificar el maquinari.
+Segons els requeriments establerts en aquest projecte, és necessari desenvolupar una interfície de maquinari entre el _host_ i el sistema MSX. L'objectiu és que aquesta interfície detecti l'arribada d'una operació IO de Z80 sobre un número de port arbitrari. També ha de fixar els valors dels senyals de control interns. En particular, farem servir un mòdul basat en l'integrat [FT245](https://ftdichip.com/wp-content/uploads/2020/08/DS_FT245R.pdf). Aquest maquinari ha de permetre modificar certs paràmetres com ara el número de port i les lògiques dels senyals de control, sense modificar el maquinari.
 
-Es tracta d'una targeta connectada al port d'expansió o _cartridge_ que tots els sistemes MSX tenen. Aquest port conté tots els senyals necessaris per enviar i rebre les trames `zlink` entre el MSX i el _host_. El detall del circuit serà incorporat en un futur.
+Zbridge és una targeta connectada al port d'expansió o _cartridge_ que tots els sistemes MSX tenen. Aquest port conté tots els senyals necessaris per enviar i rebre les trames `zlink` entre el MSX i el _host_. El detall del circuit serà incorporat en un futur.
 
-La solució que hem triat implementa una màquina d'estats finits (FSM), també amb la flaix 39SF010A. La idea és que aquesta FSM detecti l'arribada d'una operació IO de Z80 sobre un número de port programable. Aquesta entrada situa la FSM en un estat tal que genera les sortides de control per activar la lectura o escriptura d'un _byte_ des del FIFO del FT245. Aquesta solució permet configurar tots els paràmetres de partida amb xips barats. En principi també seria possible implementar-ho amb solucions basades en dispositius lògics programables (PLD), com ara FPGA o CPLD. Tanmateix, la programació de dispositius PLD requereix de certes eines de programari i estar familiaritzat amb els seus llenguatges de programació.
+La solució que hem triat implementa una màquina d'estats finits (FSM), també amb la flaix 39SF010A. La idea és que aquesta FSM detecti l'arribada d'una operació IO de Z80 sobre un número de port programable. Aquesta entrada situa la FSM en un estat tal que genera les sortides de control per activar la lectura o escriptura d'un _byte_ des del FIFO del FT245. Aquesta solució permet configurar tots els paràmetres de sortida en funció dels d'entrada amb xips barats. En principi també seria possible implementar-ho amb solucions basades en dispositius lògics programables (PLD), com ara FPGA o CPLD. Tanmateix, la programació de dispositius PLD requereix de certes eines de programari i estar familiaritzat amb els seus llenguatges de programació.
 
-La programació d'aquesta FSM exigeix desenvolupar un compilador personalitzat per generar les imatges que plantxarem a la flaix. El directori `zbridge` conté aquest compilador (`compile_fsm.py`). Com que és una FSM molt senzilla, no cal introduir codi font. La imatge es genera a partir dels paràmetres de l'arxiu de _target_ (o del port indicat directament). Les lògiques de bits i polaritat no són configurables.
+La programació d'aquesta FSM exigeix desenvolupar un compilador personalitzat per generar les imatges que gravarem a la flaix. El directori `zbridge` conté aquest compilador (`zbrc.py`). Atès que només volem compilar imatges per aquesta FSM en particular, el compilador no caldrà que processi cap codi font proporcionat per l'usuari. La imatge es genera a partir dels paràmetres de l'arxiu de _target_ (o del port indicat directament). Les lògiques de bits i polaritat no són configurables però si poden modificar-se canviant adequadament `zbrc.py`. No tenim per objectiu crear un compilador de FSM d'ús general. Per tant, prioritzem la simplicitat i el mínim temps de desenvolupament.
 
-Cada target té el seu propi port a `IO_DEFAULT_PORT` dins `targets/<nom>.mk`, així que l'ús recomanat és llegir-lo directament del manifest (evita haver de repetir el número de port a mà i queda sincronitzat si mai canvia):
+Cada target té el seu propi número de port a `IO_DEFAULT_PORT` dins `targets/<nom>.mk`, així que l'ús recomanat és llegir-lo directament del manifest (evita haver de repetir el número de port a mà i queda sincronitzat si mai canvia):
 
 ```bash
-python3 zbridge/compile_fsm.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
+python3 zbridge/zbrc.py --target vg-8010 -o zbridge/build/zbridge_fsm.bin
 ```
 
 O indicant el port manualment:
 
 ```bash
-python3 zbridge/compile_fsm.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
+python3 zbridge/zbrc.py --port 0x38 -o zbridge/build/zbridge_fsm.bin
 ```
 
 Si no es passa ni `--target` ni `--port`, s'utilitza el valor de _fallback_ intern del compilador (`0x38`), que només coincideix amb el port de `vg-8010` per casualitat i no s'ha d'assumir vàlid per a altres targets:
 
 ```bash
-python3 zbridge/compile_fsm.py
+python3 zbridge/zbrc.py
 ```
 
-També es poden generar formats addicionals, útils per depurar o simular la FSM abans de gravar-la:
+També es poden generar formats addicionals, útils per depurar o simular la FSM abans de gravar-la. En particular, podem simular el seu comportament amb l'eina [Logisim Evolution](https://github.com/logisim-evolution/logisim-evolution). Per generar una imatge acceptable per aquesta eina executem:
 
 ```bash
-python3 zbridge/compile_fsm.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
+python3 zbridge/zbrc.py --target vg-8010 --out-hex zbridge/build/zbridge_fsm.hex --out-logisim zbridge/build/zbridge_fsm.img
 ```
 
 Opcions disponibles:
