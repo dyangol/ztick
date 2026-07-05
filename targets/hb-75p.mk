@@ -4,6 +4,7 @@ OPENMSX_MACHINE_NAME = Sony_HB-75P
 OPENMSX_MACHINE_XML = Sony_HB-75P.xml
 ROM_IMAGE_NAME = msx-sony-hb75p_bootstrap.rom
 IMAGE_LAYOUT = flash2x64
+GEN_COMPACT_IMAGE = yes
 
 # Link/load memory layout
 ADDR_CODE  = 0x0040

@@ -8,6 +8,7 @@ TARGET_MANIFEST = targets/$(TARGET).mk
 include $(TARGET_MANIFEST)
 
 IMAGE_LAYOUT ?= flat64
+GEN_COMPACT_IMAGE ?= no
 BOOT_AUTOSTART ?=
 BOOT_AUTOSTART_STRICT ?= 1
 
@@ -168,10 +169,11 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 		$(COMMON_REL_OBJECTS) \
 		-o $(BIN_DIR)/startup.ihx
 	makebin -s $(ROM_BANK_SIZE) $(BIN_DIR)/startup.ihx $(BIN_DIR)/startup.rom
-	cp $(BIN_DIR)/startup.rom $(BIN_DIR)/bootloader.rom
+	cat $(BIN_DIR)/startup.rom $(BIN_DIR)/startup.rom > $(BIN_DIR)/$(ROM_IMAGE_NAME)
+ifeq ($(GEN_COMPACT_IMAGE),yes)
 	head -c 32768 $(BIN_DIR)/startup.rom > $(BIN_DIR)/startup_slot01.rom
-	head -c 32768 $(BIN_DIR)/bootloader.rom > $(BIN_DIR)/bootloader_slot01.rom
-	cat $(BIN_DIR)/bootloader.rom $(BIN_DIR)/startup.rom > $(BIN_DIR)/$(ROM_IMAGE_NAME)
+	@echo ">> Success: compact 32KB image generated (startup_slot01.rom)"
+endif
 	@echo ">> Success: startup image generated"
 else
 	@echo ">> Building firmware: bootstrap (single 64KB image) [TARGET=$(TARGET)]"

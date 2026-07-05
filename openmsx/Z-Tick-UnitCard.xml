@@ -47,7 +47,7 @@
     <primary slot="0">
       <ROM id="Z-Tick slot0 bootloader ROM">
         <rom>
-          <filename>bootloader_slot01.rom</filename>
+          <filename>startup_slot01.rom</filename>
         </rom>
         <mem base="0x0000" size="0x8000"/>
       </ROM>

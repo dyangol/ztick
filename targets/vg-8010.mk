@@ -4,6 +4,7 @@ OPENMSX_MACHINE_NAME = Philips_VG-8010
 OPENMSX_MACHINE_XML = Philips_VG-8010.xml
 ROM_IMAGE_NAME = msx-philips-vg8010_bootstrap.rom
 IMAGE_LAYOUT = flash2x64
+GEN_COMPACT_IMAGE = no
 
 # Link/load memory layout
 ADDR_CODE  = 0x0040

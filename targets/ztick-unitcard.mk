@@ -4,6 +4,7 @@ OPENMSX_MACHINE_NAME = Z-Tick-UnitCard
 OPENMSX_MACHINE_XML = Z-Tick-UnitCard.xml
 ROM_IMAGE_NAME = ztick_unitcard_flash.rom
 IMAGE_LAYOUT = flash2x64
+GEN_COMPACT_IMAGE = yes
 
 # Link/load memory layout
 ADDR_CODE  = 0x0040
@@ -25,7 +26,7 @@ BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # Additional ROM artifacts required by the openMSX machine profile.
-OPENMSX_EXTRA_ROM_FILES = bootloader_slot01.rom startup_slot01.rom
+OPENMSX_EXTRA_ROM_FILES = startup_slot01.rom
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
 RCHK_PAGE = 2

@@ -414,6 +414,11 @@ Podem incloure aquests paràmetres per tal de personalitzar la compilació:
 * `IMAGE_LAYOUT`: determina el flux d'imatge ROM. Els seus possibles valors per defecte es defineixen al manifest del target, però es poden sobreescriure:
   * `flat64`: una única ROM de 64KB.
   * `flash2x64`: dues ROM de 64KB concatenades en una imatge final de 128KB.
+* `GEN_COMPACT_IMAGE`: només aplica amb `flash2x64`. Els seus valors per defecte es defineixen al manifest del target:
+  * `no`: no genera cap imatge addicional
+  * `yes`: genera també `bin/<target>/startup_slot01.rom`, els primers 32KB de `startup.rom`. Serveix per a dos casos:
+    * gravar el codi en un xip real més petit i barat (p. ex. una EEPROM `AT28C256` de 32KB), ja que tot el codi hi cap dins la primera meitat de l'espai adreçable (`ADDR_CODE=0x0040`) i la resta (`ADDR_DATA=0x8000` en amunt) és RAM física a la placa, no contingut necessari a la flaix;
+    * `ztick-unitcard`, que simula el flux d'arrencada en dues etapes a openMSX, necessita aquest fitxer com a `OPENMSX_EXTRA_ROM_FILES` del seu perfil de màquina (`scripts/setup_openmsx.sh` falla si no existeix). Com que `bootloader` i `startup` contenen sempre el mateix codi, `openmsx/Z-Tick-UnitCard.xml` referencia aquest mateix fitxer (`startup_slot01.rom`) tant per a la ROM del _slot 0_ com per a la del _slot 1_; no cal cap còpia amb un altre nom.
 
 Exemple amb _override_ explícit:
 
@@ -423,17 +428,16 @@ make TARGET=hb-75p IMAGE_LAYOUT=flash2x64 bootstrap
 make TARGET=vg-8010 IMAGE_LAYOUT=flash2x64 bootstrap
 ```
 
-Existeixen dos formats o _layouts_ d'imatge. L'elecció entr una o altra dependrà de si fem servir un MSX físic amb la targeta de _bootstrapping_. 
+Existeixen dos formats o _layouts_ d'imatge. L'elecció entre una o altra dependrà de si fem servir un MSX físic amb la targeta de _bootstrapping_. 
 
 El _layout_ `flat64` s'utilitza en targets com `ztick` i es genera en una sola imatge: `bin/<target>/<ROM_IMAGE_NAME>`. Fa `65536` bytes i el codi d'arrencada entra directament per `startup.s`.
 
-El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`, `hb-75p` i `vg-8010`. Es generen dos imatges primaries i una composta a partir de les anteriors:
+El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`, `hb-75p` i `vg-8010`. Es compila `startup.s` una sola vegada i es genera:
 
-* `bin/<target>/bootloader.rom` (64KB)
-* `bin/<target>/startup.rom` (64KB)
-* `bin/<target>/<ROM_IMAGE_NAME>` (concatenació, 128KB)
+* `bin/<target>/startup.rom` (64KB): la imatge compilada.
+* `bin/<target>/<ROM_IMAGE_NAME>` (128KB): la mateixa imatge concatenada amb ella mateixa (`startup.rom` + `startup.rom`), ja programable a la SST39SF010A.
 
-La imatge concatenada ja pot ser programada a SST39SF010A.
+No hi ha cap `bootloader.s` diferent: `startup.s` conté alhora el vector de reset (`0x0000`), que ja fa el _Memory Switching_ inicial (`PPI_PSR_PORT <- BOOT_PSR_VALUE`) i salta a `_main_boot`. Com que el _slot 0_ (actiu al _power-on_) i el _slot_ de destí després del canvi contenen exactament el mateix codi als mateixos _offsets_, l'execució continua sense sorpreses independentment de quin dels dos bancs físics estigui mapat en cada moment; no cal, doncs, un binari de _bootloader_ separat i més petit, ni generar-lo com a fitxer a part.
 
 # Execució amb openMSX
 OpenMSX és un emulador lliure i de codi obert per a ordinadors MSX, MSX2, MSX2+, MSX turboR i maquinari relacionat. El seu lema al repositori és “the MSX emulator that aims for perfection”, és a dir, un emulador orientat a alta fidelitat i precisió.

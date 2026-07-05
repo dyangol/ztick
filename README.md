@@ -415,6 +415,11 @@ You can include these parameters to customize the build:
 * `IMAGE_LAYOUT`: determines ROM image flow. Default values are defined in the target manifest, but can be overridden:
   * `flat64`: a single 64 KB ROM.
   * `flash2x64`: two 64 KB ROMs concatenated into one final 128 KB image.
+* `GEN_COMPACT_IMAGE`: only applies with `flash2x64`. Default values are defined in the target manifest:
+  * `no`: no additional image is generated.
+  * `yes`: also generates `bin/<target>/startup_slot01.rom`, the first 32 KB of `startup.rom`. This serves two purposes:
+    * flashing the code onto a smaller, cheaper real chip (e.g. a 32 KB `AT28C256` EEPROM), since all the code fits within the first half of the address space (`ADDR_CODE=0x0040`) and the rest (`ADDR_DATA=0x8000` upward) is physical RAM on the board, not content that needs to live in flash;
+    * `ztick-unitcard`, which simulates the staged two-phase boot flow in openMSX, needs this file as `OPENMSX_EXTRA_ROM_FILES` for its machine profile (`scripts/setup_openmsx.sh` fails if it does not exist). Since `bootloader` and `startup` always contain the same code, `openmsx/Z-Tick-UnitCard.xml` references this same file (`startup_slot01.rom`) for both the _slot 0_ and _slot 1_ ROM, so no copy under a different name is needed.
 
 Example with explicit override:
 
@@ -428,13 +433,12 @@ There are two image formats or layouts. The choice between one and the other dep
 
 The `flat64` layout is used in targets such as `ztick` and generates a single image: `bin/<target>/<ROM_IMAGE_NAME>`. It is `65536` bytes and boot code enters directly through `startup.s`.
 
-The `flash2x64` layout is used for physical targets such as `hb-55p`, `hb-75p`, and `vg-8010`. It generates two primary images and one composite image built from them:
+The `flash2x64` layout is used for physical targets such as `hb-55p`, `hb-75p`, and `vg-8010`. `startup.s` is compiled once, producing:
 
-* `bin/<target>/bootloader.rom` (64 KB)
-* `bin/<target>/startup.rom` (64 KB)
-* `bin/<target>/<ROM_IMAGE_NAME>` (concatenation, 128 KB)
+* `bin/<target>/startup.rom` (64 KB): the compiled image.
+* `bin/<target>/<ROM_IMAGE_NAME>` (128 KB): the same image concatenated with itself (`startup.rom` + `startup.rom`), ready to be programmed into the SST39SF010A.
 
-The concatenated image can then be programmed into SST39SF010A.
+There is no separate `bootloader.s`: `startup.s` already contains the reset vector (`0x0000`), which performs the initial memory switching (`PPI_PSR_PORT <- BOOT_PSR_VALUE`) and jumps to `_main_boot`. Since _slot 0_ (active at power-on) and the destination slot after the switch hold exactly the same code at the same offsets, execution continues seamlessly regardless of which of the two physical banks is mapped at any given moment; a separate, smaller bootloader binary is therefore unnecessary, and there is no need to generate one as its own file either.
 
 # Running with openMSX
 OpenMSX is a free and open-source emulator for MSX, MSX2, MSX2+, MSX turboR, and related hardware. Its repository motto is “the MSX emulator that aims for perfection”, i.e. an emulator focused on high fidelity and accuracy.

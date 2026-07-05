@@ -4,6 +4,7 @@ OPENMSX_MACHINE_NAME = Z-Tick
 OPENMSX_MACHINE_XML = Z-Tick.xml
 ROM_IMAGE_NAME = ztick_bootstrap.rom
 IMAGE_LAYOUT = flat64
+GEN_COMPACT_IMAGE = no
 
 # Link/load memory layout
 ADDR_CODE  = 0x0040
