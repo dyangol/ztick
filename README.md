@@ -289,6 +289,14 @@ Available commands:
   * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
   * `ipc`: `q_used`, `q_cap`
 
+### Command output: the line emitter
+
+Commands that emit a formatted line (`tasks`, `stack`, `stats`, ...) build it into a small fixed buffer (`xsh_cmd_emitter_t`, on top of the same `sprint_t` helper `zbus.c` and `rchk` use) and write it as a single atomic frame when it fits `XSH_CMD_LINE_CAP` bytes, falling back to writing each field directly (still correct, just not atomic) if it doesn't.
+
+That buffer is a single shared static instance (`g_xsh_cmd_emitter`), not a per-call local variable. `xsh` only ever runs one command at a time (no reentrancy, no concurrent tasks touching it), so exactly one "line in progress" can ever exist -- making it structurally impossible for two emitter-owning call frames to be alive on the stack at once. An earlier per-call-local version didn't have that guarantee: unfiltered `tasks` kept its own buffer alive in `cmd_tasks` while looping and calling a separate function that needed a second one, and on real hardware this overflowed the task's 320-byte stack into the next task's (confirmed with `stack`, showing `peak=320 free_peak=0`), corrupting it and freezing the system on the next timer tick. If `xsh` is ever made reentrant/concurrent, this single-instance assumption breaks and every `xsh_cmd_emit_*` function needs an explicit instance passed in again.
+
+Line-ending constants written verbatim (the banner, the `cfg` lines) always end in `"\r\n"`, not a bare `"\n"`: relying on the client terminal to translate a lone `\n` (e.g. via `OPOST`) is fragile -- a raw-mode terminal client that turns that translation off would show every such line shifted one column further right than the last.
+
 After boot, tasks `xsh`, `b`, and `c` are created from the target manifest via `BOOT_AUTOSTART` (currently `xsh:2 b:1 c:3` in bundled targets). Task `rchk` can be started on demand with:
 
 ```tcl

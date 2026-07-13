@@ -288,6 +288,14 @@ Comandes disponibles:
     * `zlink`: `ok`, `crc`, `dup`, `type`, `len`
     * `ipc`: `q_used`, `q_cap`
 
+### Sortida de comandes: l'emissor de línies
+
+Les comandes que emeten una línia formatada (`tasks`, `stack`, `stats`, ...) la construeixen en un buffer petit i fix (`xsh_cmd_emitter_t`, basat en el mateix helper `sprint_t` que fan servir `zbus.c` i `rchk`) i l'escriuen com un únic frame atòmic quan hi cap dins `XSH_CMD_LINE_CAP` bytes, amb un fallback a escriure cada camp directament (encara correcte, però no atòmic) si no hi cap.
+
+Aquest buffer és una **única instància estàtica compartida** (`g_xsh_cmd_emitter`), no una variable local per crida. `xsh` només executa una comanda cada vegada (sense reentrada, sense tasques concurrents tocant-lo), així que només pot existir una "línia en construcció" alhora — fent estructuralment impossible que dos marcs de crida propietaris d'un emissor estiguin vius a la pila alhora. Una versió anterior amb variable local per crida no tenia aquesta garantia: `tasks` sense filtre mantenia el seu propi buffer viu a `cmd_tasks` mentre iterava i cridava una funció separada que en necessitava un altre, i en maquinari real això desbordava la pila de 320 bytes de la tasca cap a la de la següent (confirmat amb `stack`, mostrant `peak=320 free_peak=0`), corrompent-la i penjant el sistema al següent tick del rellotge. Si `xsh` mai esdevé reentrant/concurrent, aquesta assumpció d'instància única es trenca i cada funció `xsh_cmd_emit_*` necessitarà rebre una instància explícita altre cop.
+
+Les constants de final de línia escrites literalment (el banner, les línies de `cfg`) sempre acaben en `"\r\n"`, no en un `"\n"` solt: confiar que el terminal del client tradueixi un `\n` solt (p. ex. via `OPOST`) és fràgil — un client de terminal en mode raw que desactivi aquesta traducció mostraria cada línia d'aquest tipus desplaçada una columna més cap a la dreta que l'anterior.
+
 Després del boot, les tasks `xsh`, `b` i `c` es creen des del manifest del target via `BOOT_AUTOSTART` (actualment `xsh:2 b:1 c:3` als targets inclosos). La task `rchk` es pot arrencar sota demanda amb:
 
 ```tcl
