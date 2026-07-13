@@ -20,8 +20,8 @@ by the same clock -- they used to go straight from the ROM to FT245/74HC245
 and suffered the same slow/glitchy raw-ROM-output transitions seen on D0-D7
 during address changes; latching them gives clean, registered edges instead:
   D0-D2  : next state (fed back into the state 74HC374)
-  D3     : F_RD_L (FT245 RD#)   - active low
-  D4     : F_WR   (FT245 WR)    - active high
+  D3     : F_WR   (FT245 WR)    - active high
+  D4     : F_RD_L (FT245 RD#)   - active low
   D5     : DIR    (74HC245 DIR) - direction; 1 = MSX bus -> FT245, no inverter
   D6     : EBUS_L (74HC245 OE#/CE#) - active low
   D7     : unused, always 0
@@ -44,6 +44,55 @@ Note: TXE# is active low on the real FT245 (TX FIFO not full -> can write),
 same as RXF#. An earlier version of this file treated it as active high;
 that was wrong and has been corrected (txe_l == 0 gates the WRITE
 transition, matching rxf_l == 0 for READ).
+
+Note: rxf_l/txe_l are also re-checked for the whole duration of the
+READ/WRITE hold, not just on IDLE->READ/WRITE entry. An earlier version
+only gated the entry transitions and then held state purely on
+iorq_l == 0; if the FT245's RX FIFO emptied (RXF# rising) or TX FIFO
+filled up (TXE# rising) mid-access, the FSM would keep asserting
+F_RD_L/F_WR/EBUS_L regardless, connecting the bus to a byte that may no
+longer be valid, or writing into a FIFO that can no longer accept it.
+
+Note: port == target_port is also re-checked for the whole duration of
+the READ/WRITE hold, not just on IDLE->READ/WRITE entry. An earlier
+version only gated the entry transitions on the port match and then held
+state on iorq_l/rxf_l/txe_l alone; IORQ# is asserted for every Z80 I/O
+instruction, not just ours, so a fast burst of unrelated port accesses
+(VDP, PSG, ...) could bring IORQ# back down before this state machine's
+own clock (~282 ns/cycle) had a chance to fall back to IDLE, making the
+FSM treat that unrelated access as a continuation of our own READ/WRITE
+and keep the bus connected to it. Confirmed on real hardware with a
+scope on F_RD_L vs the Z80's A0: F_RD_L stayed asserted across many
+IORQ# pulses regardless of A0's value, i.e. regardless of the port being
+accessed.
+
+Note: rd_l/wr_l are also re-checked for the whole duration of the
+READ/WRITE hold, not just on IDLE->READ/WRITE entry, for the same
+"stuck HOLD" reason as the port check above. Our own port receives both
+IN and OUT accesses (the zlink driver reads and writes the same port),
+so even with the port check in place, a READ that stayed HOLDing for one
+extra clock cycle into a following OUT to that same port (or vice versa)
+would misapply read-direction bus signals to what is actually a write.
+Confirmed on real hardware with a scope on F_RD_L (pre-latch) vs RD_L:
+F_RD_L was asserting while RD_L was inactive. Between this, the port
+re-check, and the rxf_l/txe_l re-check above, every input that gates
+IDLE->READ/WRITE entry is now also re-checked throughout the hold.
+
+Note: D3/D4 physical assignment was swapped relative to the board's real
+wiring (D3 -> FT245 WR, D4 -> FT245 RD#). An earlier version of this file
+put f_rd_l on D3 and f_wr on D4, i.e. backwards. Because f_rd_l and f_wr
+happen to hold the same bit value as each other during genuine READ and
+WRITE accesses (both 0 during READ, both 1 during WRITE -- only IDLE
+has them differ, at 1 and 0 respectively), the bug was invisible on a
+scope during real accesses and only showed up during IDLE: f_rd_l's
+default (1, meaning "read inactive") landed on the real WR pin and was
+misread as WR active (active-high), while f_wr's default (0, "write
+inactive") landed on the real RD# pin and was misread as RD# active
+(active-low) -- i.e. FT245 saw both RD# and WR# asserted throughout
+IDLE, not just during a real access. This is what caused FT245 to
+continuously resample and re-transmit whatever stale value was left on
+its data bus, which is what zterm's react/echotest tools were seeing as
+a "self-echo" of their own previously-written bytes.
 """
 
 from __future__ import annotations
@@ -116,15 +165,51 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
             # IDLE->WRITE re-triggers repeatedly within the same Z80 access.
             # FT245's WR is rising-edge-triggered, so holding it does not
             # produce extra writes (verify against your FT245's datasheet).
-            if iorq_l == 0:
+            # We also keep re-checking txe_l here (mirroring the rxf_l
+            # check in STATE_READ below): if the FT245's TX FIFO fills up
+            # (TXE# goes high) while IORQ# is still down, drop back to the
+            # safe IDLE defaults (bus disconnected) immediately instead of
+            # continuing to assert F_WR/EBUS_L into a FIFO that can no
+            # longer accept the byte.
+            # We also keep re-checking port == target_port: IORQ# is
+            # asserted on every Z80 I/O instruction, not just ours, so a
+            # fast burst of unrelated port accesses (VDP, PSG, ...) can
+            # bring IORQ# back down again before this state machine's next
+            # clock edge has fallen back to IDLE. Without re-checking the
+            # port here, that unrelated access would be treated as a
+            # continuation of our own WRITE, keeping the bus connected
+            # (confirmed on real hardware: F_WR/EBUS_L staying asserted
+            # across many IORQ# pulses to ports other than ours).
+            # We also keep re-checking wr_l here: our own port gets both
+            # IN and OUT accesses (the zlink driver reads and writes the
+            # same port), so a READ that got stuck HOLDing (see rd_l check
+            # in STATE_READ below) into a following OUT to the same port
+            # -- or, symmetrically, a WRITE stuck HOLDing into a following
+            # IN -- must not be mistaken for a continuation of this WRITE
+            # just because iorq_l/txe_l/port still happen to match.
+            if iorq_l == 0 and txe_l == 0 and port == target_port and wr_l == 0:
                 next_state = STATE_WRITE
                 f_wr = 1
                 ebus_l = 0
         elif state == STATE_READ:
             # Same reasoning as WRITE: keep the bus connected and F_RD_L
             # asserted for the whole Z80 access, not just one fast clock
-            # tick, so the Z80 always samples valid, stable data.
-            if iorq_l == 0:
+            # tick, so the Z80 always samples valid, stable data. Unlike
+            # WRITE, we also keep re-checking rxf_l here: if the FT245's
+            # RX FIFO empties out (RXF# goes high) while IORQ# is still
+            # down, drop back to the safe IDLE defaults (bus disconnected)
+            # immediately instead of continuing to assert F_RD_L/EBUS_L on
+            # a byte that may no longer be valid on the FT245 side.
+            # We also keep re-checking port == target_port, for the same
+            # reason as STATE_WRITE above.
+            # We also keep re-checking rd_l here, for the same reason as
+            # wr_l in STATE_WRITE above: confirmed on real hardware with a
+            # scope on F_RD_L (pre-latch) vs RD_L that F_RD_L was
+            # asserting while RD_L was inactive -- a READ that stayed
+            # HOLding into a following OUT to the same port, since nothing
+            # here was re-checking that the access was still actually a
+            # read.
+            if iorq_l == 0 and rxf_l == 0 and port == target_port and rd_l == 0:
                 next_state = STATE_READ
                 f_rd_l = 0
                 dir_ = 0
@@ -133,8 +218,8 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
         # defaults set above.
 
         data = next_state
-        data |= f_rd_l << 3
-        data |= f_wr << 4
+        data |= f_wr << 3
+        data |= f_rd_l << 4
         data |= dir_ << 5
         data |= ebus_l << 6
 
