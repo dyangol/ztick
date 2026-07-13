@@ -18,12 +18,16 @@
 #define XSH_CMD_STR2(x) #x
 #define XSH_CMD_STR(x) XSH_CMD_STR2(x)
 
-static const uint8_t g_boot_cfg_line_0[] = "cfg max_tasks=" XSH_CMD_STR(MAX_TASKS) "\n";
-static const uint8_t g_boot_cfg_line_1[] = "cfg task_heap=" XSH_CMD_STR(TASK_HEAP_SIZE) "\n";
-static const uint8_t g_boot_cfg_line_2[] = "cfg zbus tty=" XSH_CMD_STR(ZBUS_MAX_TTY) " rx=" XSH_CMD_STR(ZBUS_BUFFER_SIZE) " txq=" XSH_CMD_STR(ZBUS_TX_QUEUE_SIZE) "\n";
-static const uint8_t g_boot_cfg_line_3[] = "cfg ipc sem_queue=1\n";
-static const uint8_t g_boot_cfg_line_4[] = "cfg autostart=" TARGET_AUTOSTART_RAW "\n";
-static const uint8_t g_xsh_cmd_banner[] = "Z-Tick xsh\n";
+/* All end in "\r\n", not just "\n": these are written verbatim with
+ * xsh_write_bytes (not via xsh_newline, which always sends both), so a
+ * bare "\n" would rely on the client terminal translating it (e.g. OPOST)
+ * instead of the protocol being self-consistent about line endings. */
+static const uint8_t g_boot_cfg_line_0[] = "cfg max_tasks=" XSH_CMD_STR(MAX_TASKS) "\r\n";
+static const uint8_t g_boot_cfg_line_1[] = "cfg task_heap=" XSH_CMD_STR(TASK_HEAP_SIZE) "\r\n";
+static const uint8_t g_boot_cfg_line_2[] = "cfg zbus tty=" XSH_CMD_STR(ZBUS_MAX_TTY) " rx=" XSH_CMD_STR(ZBUS_BUFFER_SIZE) " txq=" XSH_CMD_STR(ZBUS_TX_QUEUE_SIZE) "\r\n";
+static const uint8_t g_boot_cfg_line_3[] = "cfg ipc sem_queue=1\r\n";
+static const uint8_t g_boot_cfg_line_4[] = "cfg autostart=" TARGET_AUTOSTART_RAW "\r\n";
+static const uint8_t g_xsh_cmd_banner[] = "Z-Tick xsh\r\n";
 static const uint8_t g_xsh_cmd_prompt[] = "ztick> ";
 static const uint8_t g_xsh_cmd_state_unused[] = "unused";
 static const uint8_t g_xsh_cmd_state_ready[] = "ready";
