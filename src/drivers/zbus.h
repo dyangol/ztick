@@ -36,7 +36,14 @@
 #endif
 
 #ifndef ZBUS_TX_CHUNK
-#define ZBUS_TX_CHUNK 2u
+/* One full per-tty queue's worth per tick: with only 2 before, a single
+ * tty could take ~4 ticks (~64ms) to drain its 8-slot backlog, and
+ * xsh_write_bytes' retry loop (XSH_WRITE_RETRY_MAX NOPs, microseconds)
+ * never waits anywhere near long enough for a tick to help -- so a busy
+ * interactive session would silently drop writes once the queue filled
+ * (visible as tx_drop climbing and corrupted/truncated shell output).
+ */
+#define ZBUS_TX_CHUNK 8u
 #endif
 
 typedef struct zbus_stats {

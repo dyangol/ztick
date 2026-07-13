@@ -108,12 +108,11 @@ static void xsh_cmd_emit_buffer_line(xsh_t *sh, uint8_t *line, uint8_t len)
     xsh_write_bytes(sh, line, (uint8_t)(len + 2u));
 }
 
-/* Shared by cmd_tasks/xsh_cmd_emit_task_name_line/xsh_cmd_emit_stack_one/
- * cmd_stats: each builds a line into a fixed buffer to emit as one atomic
- * write, falling back to writing fields directly (still correct, just not
- * atomic) if the formatted line doesn't fit XSH_CMD_LINE_CAP. Once a field
- * fails to fit, the emitter flushes whatever DID fit so far, then streams
- * every remaining field (including the one that just failed) directly --
+/* Builds a line into a fixed buffer to emit as one atomic write, falling
+ * back to writing fields directly (still correct, just not atomic) if the
+ * formatted line doesn't fit XSH_CMD_LINE_CAP. Once a field fails to fit,
+ * the emitter flushes whatever DID fit so far, then streams every
+ * remaining field (including the one that just failed) directly --
  * producing exactly the same bytes on the wire as if buffering had never
  * been attempted at all. */
 typedef struct xsh_cmd_emitter {
@@ -123,66 +122,79 @@ typedef struct xsh_cmd_emitter {
     uint8_t buffered;
 } xsh_cmd_emitter_t;
 
-static void xsh_cmd_emit_begin(xsh_cmd_emitter_t *e, xsh_t *sh)
+/* Single shared instance instead of a per-call local: xsh runs one
+ * command at a time (no reentrancy, no concurrent tasks touching this
+ * struct), so exactly one "in-progress buffered line" can ever exist.
+ * Keeping this ~64-byte struct here instead of as a local variable makes
+ * it structurally impossible for two emitter-owning call frames to be
+ * alive on the stack at once -- which is exactly what overflowed xsh's
+ * 320-byte task stack (confirmed via `stack` showing peak=320,
+ * free_peak=0) when cmd_tasks's unfiltered branch used to keep its own
+ * buffer alive while calling into a second function that needed another.
+ * If xsh ever becomes reentrant/concurrent, this assumption breaks and
+ * every xsh_cmd_emit_* function below needs an instance passed in again. */
+static xsh_cmd_emitter_t g_xsh_cmd_emitter;
+
+static void xsh_cmd_emit_begin(xsh_t *sh)
 {
-    e->sh = sh;
-    e->len = 0u;
-    e->buffered = 1u;
+    g_xsh_cmd_emitter.sh = sh;
+    g_xsh_cmd_emitter.len = 0u;
+    g_xsh_cmd_emitter.buffered = 1u;
 }
 
-static void xsh_cmd_emit_fallback(xsh_cmd_emitter_t *e, uint8_t good_len)
+static void xsh_cmd_emit_fallback(uint8_t good_len)
 {
-    e->len = good_len;
-    e->buffered = 0u;
-    xsh_write_bytes(e->sh, e->buf, e->len);
+    g_xsh_cmd_emitter.len = good_len;
+    g_xsh_cmd_emitter.buffered = 0u;
+    xsh_write_bytes(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.len);
 }
 
-static void xsh_cmd_emit_cstr(xsh_cmd_emitter_t *e, const uint8_t *text)
+static void xsh_cmd_emit_cstr(const uint8_t *text)
 {
-    if (e->buffered != 0u) {
-        uint8_t good_len = e->len;
-        if (xsh_line_append_cstr(e->buf, (uint8_t)XSH_CMD_LINE_CAP, &e->len, text) != 0u) {
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.len;
+        if (xsh_line_append_cstr(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, text) != 0u) {
             return;
         }
-        xsh_cmd_emit_fallback(e, good_len);
+        xsh_cmd_emit_fallback(good_len);
     }
-    xsh_write_cstr(e->sh, text);
+    xsh_write_cstr(g_xsh_cmd_emitter.sh, text);
 }
 
-static void xsh_cmd_emit_u8_dec(xsh_cmd_emitter_t *e, uint8_t value)
+static void xsh_cmd_emit_u8_dec(uint8_t value)
 {
-    if (e->buffered != 0u) {
-        uint8_t good_len = e->len;
-        if (xsh_line_append_u8_dec(e->buf, (uint8_t)XSH_CMD_LINE_CAP, &e->len, value) != 0u) {
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.len;
+        if (xsh_line_append_u8_dec(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
             return;
         }
-        xsh_cmd_emit_fallback(e, good_len);
+        xsh_cmd_emit_fallback(good_len);
     }
-    xsh_write_u8_dec(e->sh, value);
+    xsh_write_u8_dec(g_xsh_cmd_emitter.sh, value);
 }
 
-static void xsh_cmd_emit_u16_dec(xsh_cmd_emitter_t *e, uint16_t value)
+static void xsh_cmd_emit_u16_dec(uint16_t value)
 {
-    if (e->buffered != 0u) {
-        uint8_t good_len = e->len;
-        if (xsh_line_append_u16_dec(e->buf, (uint8_t)XSH_CMD_LINE_CAP, &e->len, value) != 0u) {
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.len;
+        if (xsh_line_append_u16_dec(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
             return;
         }
-        xsh_cmd_emit_fallback(e, good_len);
+        xsh_cmd_emit_fallback(good_len);
     }
-    xsh_write_u16_dec(e->sh, value);
+    xsh_write_u16_dec(g_xsh_cmd_emitter.sh, value);
 }
 
-static void xsh_cmd_emit_hex16(xsh_cmd_emitter_t *e, uint16_t value)
+static void xsh_cmd_emit_hex16(uint16_t value)
 {
-    if (e->buffered != 0u) {
-        uint8_t good_len = e->len;
-        if (line_append_u16_hex(e->buf, (uint8_t)XSH_CMD_LINE_CAP, &e->len, value) != 0u) {
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.len;
+        if (line_append_u16_hex(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
             return;
         }
-        xsh_cmd_emit_fallback(e, good_len);
+        xsh_cmd_emit_fallback(good_len);
     }
-    xsh_write_u16_hex(e->sh, value);
+    xsh_write_u16_hex(g_xsh_cmd_emitter.sh, value);
 }
 
 /* tty= field for a task: unified so every emitter-based line always
@@ -190,56 +202,56 @@ static void xsh_cmd_emit_hex16(xsh_cmd_emitter_t *e, uint16_t value)
  * buffered path silently omitted it while its fallback path included it,
  * so the "tasks" summary could gain/lose a field depending on whether the
  * line happened to fit the buffer). */
-static void xsh_cmd_emit_tty(xsh_cmd_emitter_t *e, uint8_t slot)
+static void xsh_cmd_emit_tty(uint8_t slot)
 {
     uint8_t tty_id;
 
-    xsh_cmd_emit_cstr(e, (const uint8_t *)" tty=");
+    xsh_cmd_emit_cstr((const uint8_t *)" tty=");
     if (zbus_tty_get_for_task(slot, &tty_id) != 0u) {
-        xsh_cmd_emit_u8_dec(e, tty_id);
+        xsh_cmd_emit_u8_dec(tty_id);
     } else {
-        xsh_cmd_emit_cstr(e, (const uint8_t *)"-");
+        xsh_cmd_emit_cstr((const uint8_t *)"-");
     }
 }
 
-static void xsh_cmd_emit_name(xsh_cmd_emitter_t *e, const uint8_t *name, uint8_t name_len)
+static void xsh_cmd_emit_name(const uint8_t *name, uint8_t name_len)
 {
     uint8_t i;
 
     if (name_len == 0u) {
-        xsh_cmd_emit_cstr(e, (const uint8_t *)"-");
+        xsh_cmd_emit_cstr((const uint8_t *)"-");
         return;
     }
 
-    if (e->buffered != 0u) {
-        uint8_t good_len = e->len;
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.len;
         uint8_t fits = 1u;
 
         for (i = 0u; i < name_len; ++i) {
-            if (e->len >= (uint8_t)XSH_CMD_LINE_CAP) {
+            if (g_xsh_cmd_emitter.len >= (uint8_t)XSH_CMD_LINE_CAP) {
                 fits = 0u;
                 break;
             }
-            e->buf[e->len] = name[i];
-            e->len++;
+            g_xsh_cmd_emitter.buf[g_xsh_cmd_emitter.len] = name[i];
+            g_xsh_cmd_emitter.len++;
         }
         if (fits != 0u) {
             return;
         }
-        xsh_cmd_emit_fallback(e, good_len);
+        xsh_cmd_emit_fallback(good_len);
     }
 
     for (i = 0u; i < name_len; ++i) {
-        xsh_write_bytes(e->sh, &name[i], 1u);
+        xsh_write_bytes(g_xsh_cmd_emitter.sh, &name[i], 1u);
     }
 }
 
-static void xsh_cmd_emit_finish(xsh_cmd_emitter_t *e)
+static void xsh_cmd_emit_finish(void)
 {
-    if (e->buffered != 0u) {
-        xsh_cmd_emit_buffer_line(e->sh, e->buf, e->len);
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        xsh_cmd_emit_buffer_line(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.len);
     } else {
-        xsh_newline(e->sh);
+        xsh_newline(g_xsh_cmd_emitter.sh);
     }
 }
 
@@ -670,17 +682,24 @@ static uint8_t xsh_cmd_task_name_len(uint8_t slot)
 
 static uint8_t xsh_cmd_emit_task_name_line(xsh_t *sh, uint8_t slot)
 {
-    xsh_cmd_emitter_t e;
     uint8_t name_len = xsh_cmd_task_name_len(slot);
 
-    xsh_cmd_emit_begin(&e, sh);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)"task ");
-    xsh_cmd_emit_u8_dec(&e, slot);
-    xsh_cmd_emit_tty(&e, slot);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" name=");
-    xsh_cmd_emit_name(&e, g_tasks[slot].name, name_len);
-    xsh_cmd_emit_finish(&e);
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr((const uint8_t *)"task ");
+    xsh_cmd_emit_u8_dec(slot);
+    xsh_cmd_emit_tty(slot);
+    xsh_cmd_emit_cstr((const uint8_t *)" name=");
+    xsh_cmd_emit_name(g_tasks[slot].name, name_len);
+    xsh_cmd_emit_finish();
     return 1u;
+}
+
+static void xsh_cmd_emit_tasks_summary(xsh_t *sh, uint8_t active)
+{
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr((const uint8_t *)"tasks active=");
+    xsh_cmd_emit_u8_dec(active);
+    xsh_cmd_emit_finish();
 }
 
 static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
@@ -703,10 +722,7 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     }
 
     if (use_filter == 0u) {
-        uint8_t line[ZBUS_FRAME_MAX_LEN];
-        uint8_t ok;
         uint8_t active = 0u;
-        uint8_t len = 0u;
 
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state != TASK_UNUSED) {
@@ -714,15 +730,7 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
             }
         }
 
-        ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, (const uint8_t *)"tasks active=");
-        if (ok != 0u) {
-            ok = xsh_line_append_u8_dec(line, (uint8_t)XSH_CMD_LINE_CAP, &len, active);
-        }
-        if (ok != 0u) {
-            xsh_cmd_emit_buffer_line(sh, line, len);
-        } else {
-            xsh_cmd_emit_line(sh, (const uint8_t *)"tasks");
-        }
+        xsh_cmd_emit_tasks_summary(sh, active);
 
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state == TASK_UNUSED) {
@@ -747,7 +755,6 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     }
 
     for (slot = 0u; slot < MAX_TASKS; ++slot) {
-        xsh_cmd_emitter_t e;
         uint8_t state = g_tasks[slot].state;
         uint8_t name_len = xsh_cmd_task_name_len(slot);
 
@@ -759,21 +766,21 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
             continue;
         }
 
-        xsh_cmd_emit_begin(&e, sh);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)"task ");
-        xsh_cmd_emit_u8_dec(&e, slot);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)" state=");
-        xsh_cmd_emit_cstr(&e, xsh_cmd_task_state_name(state));
-        xsh_cmd_emit_tty(&e, slot);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)" w=");
-        xsh_cmd_emit_u8_dec(&e, g_tasks[slot].weight);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)" b=");
-        xsh_cmd_emit_u8_dec(&e, g_tasks[slot].budget);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)" sp=0x");
-        xsh_cmd_emit_hex16(&e, g_tasks[slot].sp);
-        xsh_cmd_emit_cstr(&e, (const uint8_t *)" name=");
-        xsh_cmd_emit_name(&e, g_tasks[slot].name, name_len);
-        xsh_cmd_emit_finish(&e);
+        xsh_cmd_emit_begin(sh);
+        xsh_cmd_emit_cstr((const uint8_t *)"task ");
+        xsh_cmd_emit_u8_dec(slot);
+        xsh_cmd_emit_cstr((const uint8_t *)" state=");
+        xsh_cmd_emit_cstr(xsh_cmd_task_state_name(state));
+        xsh_cmd_emit_tty(slot);
+        xsh_cmd_emit_cstr((const uint8_t *)" w=");
+        xsh_cmd_emit_u8_dec(g_tasks[slot].weight);
+        xsh_cmd_emit_cstr((const uint8_t *)" b=");
+        xsh_cmd_emit_u8_dec(g_tasks[slot].budget);
+        xsh_cmd_emit_cstr((const uint8_t *)" sp=0x");
+        xsh_cmd_emit_hex16(g_tasks[slot].sp);
+        xsh_cmd_emit_cstr((const uint8_t *)" name=");
+        xsh_cmd_emit_name(g_tasks[slot].name, name_len);
+        xsh_cmd_emit_finish();
     }
 
     return 1u;
@@ -828,7 +835,6 @@ static uint8_t cmd_heap(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 
 static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
 {
-    xsh_cmd_emitter_t e;
     uint16_t peak_used;
     uint16_t current_used;
     uint16_t stack_size;
@@ -842,18 +848,18 @@ static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
 
     free_peak = (uint16_t)(stack_size - peak_used);
 
-    xsh_cmd_emit_begin(&e, sh);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)"stack ");
-    xsh_cmd_emit_u8_dec(&e, slot);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" size=");
-    xsh_cmd_emit_u16_dec(&e, stack_size);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" peak=");
-    xsh_cmd_emit_u16_dec(&e, peak_used);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" free_peak=");
-    xsh_cmd_emit_u16_dec(&e, free_peak);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" current=");
-    xsh_cmd_emit_u16_dec(&e, current_used);
-    xsh_cmd_emit_finish(&e);
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr((const uint8_t *)"stack ");
+    xsh_cmd_emit_u8_dec(slot);
+    xsh_cmd_emit_cstr((const uint8_t *)" size=");
+    xsh_cmd_emit_u16_dec(stack_size);
+    xsh_cmd_emit_cstr((const uint8_t *)" peak=");
+    xsh_cmd_emit_u16_dec(peak_used);
+    xsh_cmd_emit_cstr((const uint8_t *)" free_peak=");
+    xsh_cmd_emit_u16_dec(free_peak);
+    xsh_cmd_emit_cstr((const uint8_t *)" current=");
+    xsh_cmd_emit_u16_dec(current_used);
+    xsh_cmd_emit_finish();
 }
 
 static uint8_t cmd_stack(xsh_t *sh, uint8_t argc, uint8_t *argv[])
@@ -885,7 +891,6 @@ static uint8_t cmd_stack(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     zbus_stats_t stats;
-    xsh_cmd_emitter_t e;
     uint8_t q_used;
     uint8_t q_cap;
 
@@ -894,27 +899,27 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 
     zbus_stats_snapshot(&stats);
 
-    xsh_cmd_emit_begin(&e, sh);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)"zbus tx_drop=");
-    xsh_cmd_emit_u16_dec(&e, stats.tx_drop);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" rx_overflow=");
-    xsh_cmd_emit_u16_dec(&e, stats.rx_overflow);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" attach_fail=");
-    xsh_cmd_emit_u16_dec(&e, stats.attach_fail);
-    xsh_cmd_emit_finish(&e);
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr((const uint8_t *)"zbus tx_drop=");
+    xsh_cmd_emit_u16_dec(stats.tx_drop);
+    xsh_cmd_emit_cstr((const uint8_t *)" rx_overflow=");
+    xsh_cmd_emit_u16_dec(stats.rx_overflow);
+    xsh_cmd_emit_cstr((const uint8_t *)" attach_fail=");
+    xsh_cmd_emit_u16_dec(stats.attach_fail);
+    xsh_cmd_emit_finish();
 
-    xsh_cmd_emit_begin(&e, sh);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)"zlink ok=");
-    xsh_cmd_emit_u16_dec(&e, stats.zlink_rx_frames_ok);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" crc=");
-    xsh_cmd_emit_u16_dec(&e, stats.zlink_rx_crc_err);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" dup=");
-    xsh_cmd_emit_u16_dec(&e, stats.zlink_rx_dup);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" type=");
-    xsh_cmd_emit_u16_dec(&e, stats.zlink_rx_type_err);
-    xsh_cmd_emit_cstr(&e, (const uint8_t *)" len=");
-    xsh_cmd_emit_u16_dec(&e, stats.zlink_rx_len_err);
-    xsh_cmd_emit_finish(&e);
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr((const uint8_t *)"zlink ok=");
+    xsh_cmd_emit_u16_dec(stats.zlink_rx_frames_ok);
+    xsh_cmd_emit_cstr((const uint8_t *)" crc=");
+    xsh_cmd_emit_u16_dec(stats.zlink_rx_crc_err);
+    xsh_cmd_emit_cstr((const uint8_t *)" dup=");
+    xsh_cmd_emit_u16_dec(stats.zlink_rx_dup);
+    xsh_cmd_emit_cstr((const uint8_t *)" type=");
+    xsh_cmd_emit_u16_dec(stats.zlink_rx_type_err);
+    xsh_cmd_emit_cstr((const uint8_t *)" len=");
+    xsh_cmd_emit_u16_dec(stats.zlink_rx_len_err);
+    xsh_cmd_emit_finish();
 
     q_used = ipc_demo_queue_used();
     q_cap = ipc_demo_queue_capacity();
