@@ -6,6 +6,7 @@
 #include "zlink.h"
 #include "zlink_diag.h"
 #include "../bootstrap/rtos.h"
+#include "../lib/sprint.h"
 
 #pragma codeseg CODE
 
@@ -75,7 +76,6 @@ static uint8_t zbus_tty_match_owner(uint8_t tty_id, uint8_t owner_task_id)
     return (zbus_tty_is_attached(tty_id) != 0u) && (g_zbus_tty_table[tty_id].owner_task_id == owner_task_id);
 }
 
-
 static uint8_t zbus_ring_advance(uint8_t index, uint8_t size)
 {
     index++;
@@ -135,90 +135,21 @@ static void zbus_set_tty_attached(uint8_t tty_id, uint8_t owner_task_id, uint8_t
     zbus_reset_rx_queue(tty_id);
 }
 
-static uint8_t zbus_text_append_cstr(uint8_t *buf, uint8_t *io_len, uint8_t max_len, const uint8_t *text)
-{
-    uint8_t len = *io_len;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0) || (text == (const uint8_t *)0)) {
-        return 0u;
-    }
-
-    while (*text != 0u) {
-        if (len >= max_len) {
-            return 0u;
-        }
-        buf[len] = *text;
-        len++;
-        text++;
-    }
-
-    *io_len = len;
-    return 1u;
-}
-
-static uint8_t zbus_text_append_u8_dec(uint8_t *buf, uint8_t *io_len, uint8_t max_len, uint8_t value)
-{
-    uint8_t tmp[3];
-    uint8_t digits = 0u;
-    uint8_t i;
-    uint8_t len = *io_len;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
-        return 0u;
-    }
-
-    if (value == 0u) {
-        if (len >= max_len) {
-            return 0u;
-        }
-        buf[len] = (uint8_t)'0';
-        *io_len = (uint8_t)(len + 1u);
-        return 1u;
-    }
-
-    while (value > 0u) {
-        tmp[digits] = (uint8_t)('0' + (value % 10u));
-        digits++;
-        value = (uint8_t)(value / 10u);
-    }
-
-    for (i = digits; i > 0u; --i) {
-        if (len >= max_len) {
-            return 0u;
-        }
-        buf[len] = tmp[(uint8_t)(i - 1u)];
-        len++;
-    }
-
-    *io_len = len;
-    return 1u;
-}
-
 static void zbus_kernel_emit_tty_fallback(uint8_t owner_task_id, uint8_t requested_tty, uint8_t assigned_tty)
 {
     uint8_t payload[64];
-    uint8_t len = 0u;
-    uint8_t ok = 1u;
+    sprint_t sp;
 
-    ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)"kern tty-fallback task=");
-    if (ok != 0u) {
-        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), owner_task_id);
-    }
-    if (ok != 0u) {
-        ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)" req=");
-    }
-    if (ok != 0u) {
-        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), requested_tty);
-    }
-    if (ok != 0u) {
-        ok = zbus_text_append_cstr(payload, &len, (uint8_t)sizeof(payload), (const uint8_t *)" got=");
-    }
-    if (ok != 0u) {
-        ok = zbus_text_append_u8_dec(payload, &len, (uint8_t)sizeof(payload), assigned_tty);
-    }
+    sprint_begin(&sp, payload, (uint8_t)sizeof(payload));
+    (void)sprint_cstr(&sp, (const uint8_t *)"kern tty-fallback task=");
+    (void)sprint_u8_dec(&sp, owner_task_id);
+    (void)sprint_cstr(&sp, (const uint8_t *)" req=");
+    (void)sprint_u8_dec(&sp, requested_tty);
+    (void)sprint_cstr(&sp, (const uint8_t *)" got=");
+    (void)sprint_u8_dec(&sp, assigned_tty);
 
-    if ((ok != 0u) && (len > 0u)) {
-        if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, len) == 0u) {
+    if ((sprint_ok(&sp) != 0u) && (sp.len > 0u)) {
+        if (zlink_send_data((uint8_t)ZBUS_KERNEL_TTY_ID, payload, sp.len) == 0u) {
             COUNTER_INC16_SAT(&g_zbus_stat_tx_drop);
         }
     }

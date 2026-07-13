@@ -57,22 +57,16 @@ uint8_t xsh_line_append_cstr(uint8_t *buf, uint8_t max, uint8_t *io_len, const u
     return 1u;
 }
 
-uint8_t xsh_line_append_u16_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint16_t value)
+/* Shared by the buffered (xsh_line_append_u16_dec) and direct-write
+ * (xsh_write_u16_dec_inner) decimal paths: fills digits[] least-significant
+ * first and returns how many were written, so both callers can emit them
+ * in the same most-significant-first loop. */
+static uint8_t xsh_u16_to_digits(uint16_t value, uint8_t digits[5])
 {
-    uint8_t digits[5];
     uint8_t count = 0u;
-    uint8_t i;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
-        return 0u;
-    }
 
     if (value == 0u) {
-        if (*io_len >= max) {
-            return 0u;
-        }
-        buf[*io_len] = (uint8_t)'0';
-        *io_len = (uint8_t)(*io_len + 1u);
+        digits[0] = (uint8_t)'0';
         return 1u;
     }
 
@@ -81,6 +75,21 @@ uint8_t xsh_line_append_u16_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint
         value = (uint16_t)(value / 10u);
         count++;
     }
+
+    return count;
+}
+
+uint8_t xsh_line_append_u16_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint16_t value)
+{
+    uint8_t digits[5];
+    uint8_t count;
+    uint8_t i;
+
+    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
+        return 0u;
+    }
+
+    count = xsh_u16_to_digits(value, digits);
 
     for (i = count; i > 0u; --i) {
         if (*io_len >= max) {
@@ -218,20 +227,8 @@ void xsh_write_cstr(const xsh_t *sh, const uint8_t *text)
 static void xsh_write_u16_dec_inner(const xsh_t *sh, uint16_t value)
 {
     uint8_t digits[5];
-    uint8_t count = 0u;
+    uint8_t count = xsh_u16_to_digits(value, digits);
     uint8_t i;
-
-    if (value == 0u) {
-        uint8_t zero = (uint8_t)'0';
-        xsh_write_bytes(sh, &zero, 1u);
-        return;
-    }
-
-    while (value > 0u) {
-        digits[count] = (uint8_t)((value % 10u) + (uint8_t)'0');
-        value = (uint16_t)(value / 10u);
-        count++;
-    }
 
     for (i = count; i > 0u; --i) {
         xsh_write_bytes(sh, &digits[i - 1u], 1u);

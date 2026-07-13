@@ -31,17 +31,15 @@ static const uint8_t g_xsh_cmd_state_wait_q_send[] = "wait_q_send";
 static const uint8_t g_xsh_cmd_state_wait_q_recv[] = "wait_q_recv";
 static const uint8_t g_xsh_cmd_txt_unknown[] = "unknown command";
 static const uint8_t g_xsh_cmd_txt_bad_task[] = "undefined task id";
-static const uint8_t g_xsh_cmd_usage_help[] = "help";
-static const uint8_t g_xsh_cmd_usage_cfg[] = "cfg";
+/* help/cfg/stats have no argument-usage text of their own: name doubles as usage. */
+static const uint8_t g_xsh_cmd_name_help[] = "help";
+static const uint8_t g_xsh_cmd_name_cfg[] = "cfg";
 static const uint8_t g_xsh_cmd_usage_tasks[] = "usage: tasks [task_id]";
 static const uint8_t g_xsh_cmd_usage_start[] = "usage: start <task_name> [weight|w=<1..3>] [t=<0..9>|tty=<0..9>|t=auto] [args...]";
 static const uint8_t g_xsh_cmd_usage_stop[] = "usage: stop <task_name>";
 static const uint8_t g_xsh_cmd_usage_weight[] = "usage: weight <task_id> <1..3>";
 static const uint8_t g_xsh_cmd_usage_heap[] = "usage: heap [task_id]";
 static const uint8_t g_xsh_cmd_usage_stack[] = "usage: stack [task_id]";
-static const uint8_t g_xsh_cmd_usage_stats[] = "stats";
-static const uint8_t g_xsh_cmd_name_help[] = "help";
-static const uint8_t g_xsh_cmd_name_cfg[] = "cfg";
 static const uint8_t g_xsh_cmd_name_tasks[] = "tasks";
 static const uint8_t g_xsh_cmd_name_start[] = "start";
 static const uint8_t g_xsh_cmd_name_stop[] = "stop";
@@ -992,15 +990,15 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 }
 
 static const xsh_cmd_t g_xsh_cmds[] = {
-    {g_xsh_cmd_name_help, g_xsh_cmd_usage_help, 0u, 0u, cmd_help},
-    {g_xsh_cmd_name_cfg, g_xsh_cmd_usage_cfg, 0u, 0u, cmd_cfg},
+    {g_xsh_cmd_name_help, g_xsh_cmd_name_help, 0u, 0u, cmd_help},
+    {g_xsh_cmd_name_cfg, g_xsh_cmd_name_cfg, 0u, 0u, cmd_cfg},
     {g_xsh_cmd_name_tasks, g_xsh_cmd_usage_tasks, 0u, 1u, cmd_tasks},
     {g_xsh_cmd_name_start, g_xsh_cmd_usage_start, 1u, (uint8_t)(XSH_ARGV_MAX - 1u), cmd_start},
     {g_xsh_cmd_name_stop, g_xsh_cmd_usage_stop, 1u, 1u, cmd_stop},
     {g_xsh_cmd_name_weight, g_xsh_cmd_usage_weight, 2u, 2u, cmd_weight},
     {g_xsh_cmd_name_heap, g_xsh_cmd_usage_heap, 0u, 1u, cmd_heap},
     {g_xsh_cmd_name_stack, g_xsh_cmd_usage_stack, 0u, 1u, cmd_stack},
-    {g_xsh_cmd_name_stats, g_xsh_cmd_usage_stats, 0u, 0u, cmd_stats}
+    {g_xsh_cmd_name_stats, g_xsh_cmd_name_stats, 0u, 0u, cmd_stats}
 };
 
 void xsh_cmd_init_xsh(xsh_t *sh)

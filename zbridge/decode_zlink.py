@@ -39,10 +39,12 @@ def crc8(data: bytes) -> int:
     return crc
 
 
+def ascii_repr(payload: bytes) -> str:
+    return "".join(chr(b) if 32 <= b <= 126 else "." for b in payload)
+
+
 def format_payload(payload: bytes) -> str:
-    hex_part = payload.hex(" ")
-    ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in payload)
-    return f'{hex_part}  "{ascii_part}"'
+    return f'{payload.hex(" ")}  "{ascii_repr(payload)}"'
 
 
 def decode(data: bytes):
@@ -152,9 +154,8 @@ def main() -> int:
             print(f"[{offset:06d}] {type_name}{warn}")
             print(f"  b0=0x{b0:02X}  type={type_name}({type_id})  tty={tty}  len={len(payload)}  seq=0x{seq:02X}  crc=0x{crc_rx:02X} OK")
             if payload:
-                ascii_part = "".join(chr(b) if 32 <= b <= 126 else "." for b in payload)
                 print(f"  hex  : {payload.hex(' ')}")
-                print(f"  ascii: {ascii_part}")
+                print(f"  ascii: {ascii_repr(payload)}")
         else:
             print(
                 f"[{offset:06d}] {type_name:<5} tty={tty:2d} seq=0x{seq:02X} "
