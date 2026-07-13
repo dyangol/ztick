@@ -34,33 +34,10 @@ static uint8_t xsh_strlen_u8(const uint8_t *text)
     return len;
 }
 
-uint8_t xsh_line_append_cstr(uint8_t *buf, uint8_t max, uint8_t *io_len, const uint8_t *text)
-{
-    uint8_t idx;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0) || (text == (const uint8_t *)0)) {
-        return 0u;
-    }
-
-    idx = *io_len;
-    while (text[0] != 0u) {
-        if (idx >= max) {
-            *io_len = idx;
-            return 0u;
-        }
-        buf[idx] = text[0];
-        idx++;
-        text++;
-    }
-
-    *io_len = idx;
-    return 1u;
-}
-
-/* Shared by the buffered (xsh_line_append_u16_dec) and direct-write
- * (xsh_write_u16_dec_inner) decimal paths: fills digits[] least-significant
- * first and returns how many were written, so both callers can emit them
- * in the same most-significant-first loop. */
+/* Shared by xsh_write_u8_dec/xsh_write_u16_dec's direct-write path (via
+ * xsh_write_u16_dec_inner): fills digits[] least-significant first and
+ * returns how many were written, so the caller can emit them in a
+ * most-significant-first loop. */
 static uint8_t xsh_u16_to_digits(uint16_t value, uint8_t digits[5])
 {
     uint8_t count = 0u;
@@ -77,34 +54,6 @@ static uint8_t xsh_u16_to_digits(uint16_t value, uint8_t digits[5])
     }
 
     return count;
-}
-
-uint8_t xsh_line_append_u16_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint16_t value)
-{
-    uint8_t digits[5];
-    uint8_t count;
-    uint8_t i;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
-        return 0u;
-    }
-
-    count = xsh_u16_to_digits(value, digits);
-
-    for (i = count; i > 0u; --i) {
-        if (*io_len >= max) {
-            return 0u;
-        }
-        buf[*io_len] = digits[i - 1u];
-        *io_len = (uint8_t)(*io_len + 1u);
-    }
-
-    return 1u;
-}
-
-uint8_t xsh_line_append_u8_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint8_t value)
-{
-    return xsh_line_append_u16_dec(buf, max, io_len, (uint16_t)value);
 }
 
 static uint8_t xsh_try_write_bytes(const xsh_t *sh, const uint8_t *data, uint8_t len)

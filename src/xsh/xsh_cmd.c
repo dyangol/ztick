@@ -6,6 +6,7 @@
 #include "target_autostart.h"
 #include "../lib/ipc_demo.h"
 #include "../lib/task.h"
+#include "../lib/sprint.h"
 #include "xsh.h"
 #include "xsh_cmd.h"
 
@@ -80,27 +81,6 @@ static const uint8_t *xsh_cmd_task_state_name(uint8_t state)
     return (const uint8_t *)"other";
 }
 
-static uint8_t line_append_u16_hex(uint8_t *buf, uint8_t max, uint8_t *io_len, uint16_t value)
-{
-    uint8_t i;
-
-    if ((buf == (uint8_t *)0) || (io_len == (uint8_t *)0)) {
-        return 0u;
-    }
-
-    for (i = 0u; i < 4u; ++i) {
-        uint8_t nibble = (uint8_t)((value >> (uint8_t)((3u - i) * 4u)) & 0x0Fu);
-        uint8_t digit = (nibble < 10u) ? (uint8_t)('0' + nibble) : (uint8_t)('A' + (nibble - 10u));
-        if (*io_len >= max) {
-            return 0u;
-        }
-        buf[*io_len] = digit;
-        *io_len = (uint8_t)(*io_len + 1u);
-    }
-
-    return 1u;
-}
-
 static void xsh_cmd_emit_buffer_line(xsh_t *sh, uint8_t *line, uint8_t len)
 {
     line[len] = (uint8_t)'\r';
@@ -117,8 +97,12 @@ static void xsh_cmd_emit_buffer_line(xsh_t *sh, uint8_t *line, uint8_t len)
  * been attempted at all. */
 typedef struct xsh_cmd_emitter {
     xsh_t *sh;
-    uint8_t buf[ZBUS_FRAME_MAX_LEN];
-    uint8_t len;
+    sprint_t sp;
+    /* +1: sprint_t reserves one byte of `cap` for its own NUL terminator,
+     * which xsh_cmd_emit_buffer_line doesn't use (it appends "\r\n" using
+     * sp.len directly) -- sized so the usable content length is still
+     * exactly XSH_CMD_LINE_CAP, matching the pre-sprint_t behavior. */
+    uint8_t buf[(uint8_t)(ZBUS_FRAME_MAX_LEN + 1u)];
     uint8_t buffered;
 } xsh_cmd_emitter_t;
 
@@ -138,22 +122,22 @@ static xsh_cmd_emitter_t g_xsh_cmd_emitter;
 static void xsh_cmd_emit_begin(xsh_t *sh)
 {
     g_xsh_cmd_emitter.sh = sh;
-    g_xsh_cmd_emitter.len = 0u;
+    sprint_begin(&g_xsh_cmd_emitter.sp, g_xsh_cmd_emitter.buf, (uint8_t)(XSH_CMD_LINE_CAP + 1u));
     g_xsh_cmd_emitter.buffered = 1u;
 }
 
 static void xsh_cmd_emit_fallback(uint8_t good_len)
 {
-    g_xsh_cmd_emitter.len = good_len;
+    g_xsh_cmd_emitter.sp.len = good_len;
     g_xsh_cmd_emitter.buffered = 0u;
-    xsh_write_bytes(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.len);
+    xsh_write_bytes(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.sp.len);
 }
 
 static void xsh_cmd_emit_cstr(const uint8_t *text)
 {
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        uint8_t good_len = g_xsh_cmd_emitter.len;
-        if (xsh_line_append_cstr(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, text) != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_cstr(&g_xsh_cmd_emitter.sp, text) != 0u) {
             return;
         }
         xsh_cmd_emit_fallback(good_len);
@@ -164,8 +148,8 @@ static void xsh_cmd_emit_cstr(const uint8_t *text)
 static void xsh_cmd_emit_u8_dec(uint8_t value)
 {
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        uint8_t good_len = g_xsh_cmd_emitter.len;
-        if (xsh_line_append_u8_dec(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_u8_dec(&g_xsh_cmd_emitter.sp, value) != 0u) {
             return;
         }
         xsh_cmd_emit_fallback(good_len);
@@ -176,8 +160,8 @@ static void xsh_cmd_emit_u8_dec(uint8_t value)
 static void xsh_cmd_emit_u16_dec(uint16_t value)
 {
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        uint8_t good_len = g_xsh_cmd_emitter.len;
-        if (xsh_line_append_u16_dec(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_u16_dec(&g_xsh_cmd_emitter.sp, value) != 0u) {
             return;
         }
         xsh_cmd_emit_fallback(good_len);
@@ -188,8 +172,8 @@ static void xsh_cmd_emit_u16_dec(uint16_t value)
 static void xsh_cmd_emit_hex16(uint16_t value)
 {
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        uint8_t good_len = g_xsh_cmd_emitter.len;
-        if (line_append_u16_hex(g_xsh_cmd_emitter.buf, (uint8_t)XSH_CMD_LINE_CAP, &g_xsh_cmd_emitter.len, value) != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_hex16(&g_xsh_cmd_emitter.sp, value) != 0u) {
             return;
         }
         xsh_cmd_emit_fallback(good_len);
@@ -224,16 +208,14 @@ static void xsh_cmd_emit_name(const uint8_t *name, uint8_t name_len)
     }
 
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        uint8_t good_len = g_xsh_cmd_emitter.len;
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
         uint8_t fits = 1u;
 
         for (i = 0u; i < name_len; ++i) {
-            if (g_xsh_cmd_emitter.len >= (uint8_t)XSH_CMD_LINE_CAP) {
+            if (sprint_char(&g_xsh_cmd_emitter.sp, name[i]) == 0u) {
                 fits = 0u;
                 break;
             }
-            g_xsh_cmd_emitter.buf[g_xsh_cmd_emitter.len] = name[i];
-            g_xsh_cmd_emitter.len++;
         }
         if (fits != 0u) {
             return;
@@ -249,7 +231,7 @@ static void xsh_cmd_emit_name(const uint8_t *name, uint8_t name_len)
 static void xsh_cmd_emit_finish(void)
 {
     if (g_xsh_cmd_emitter.buffered != 0u) {
-        xsh_cmd_emit_buffer_line(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.len);
+        xsh_cmd_emit_buffer_line(g_xsh_cmd_emitter.sh, g_xsh_cmd_emitter.buf, g_xsh_cmd_emitter.sp.len);
     } else {
         xsh_newline(g_xsh_cmd_emitter.sh);
     }
@@ -257,17 +239,9 @@ static void xsh_cmd_emit_finish(void)
 
 static void xsh_cmd_emit_line(xsh_t *sh, const uint8_t *text)
 {
-    uint8_t line[ZBUS_FRAME_MAX_LEN];
-    uint8_t len = 0u;
-    uint8_t ok;
-
-    ok = xsh_line_append_cstr(line, (uint8_t)XSH_CMD_LINE_CAP, &len, text);
-    if (ok != 0u) {
-        xsh_cmd_emit_buffer_line(sh, line, len);
-    } else {
-        xsh_write_cstr(sh, text);
-        xsh_newline(sh);
-    }
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr(text);
+    xsh_cmd_emit_finish();
 }
 
 static void xsh_cmd_emit_usage(xsh_t *sh, const uint8_t *usage)

@@ -59,8 +59,5 @@ void xsh_write_u16_dec(const xsh_t *sh, uint16_t value);
 void xsh_write_u16_hex(const xsh_t *sh, uint16_t value);
 void xsh_newline(const xsh_t *sh);
 uint8_t xsh_parse_u8(const uint8_t *text, uint8_t *out_value);
-uint8_t xsh_line_append_cstr(uint8_t *buf, uint8_t max, uint8_t *io_len, const uint8_t *text);
-uint8_t xsh_line_append_u16_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint16_t value);
-uint8_t xsh_line_append_u8_dec(uint8_t *buf, uint8_t max, uint8_t *io_len, uint8_t value);
 
 #endif
