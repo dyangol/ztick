@@ -26,12 +26,8 @@ BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
-RCHK_PAGE = 2
-RCHK_SLOT = 1
-RCHK_ALLOWED_START = 0x0100
-RCHK_ALLOWED_END = 0x3EFF
-RCHK_OFFSET = 0x0100
-RCHK_LENGTH = 0x0040
+# page:slot:allowed_start:allowed_end:offset:length, one entry per internal-RAM page to sweep.
+RCHK_TESTS = 2:1:0x0100:0x3EFF:0x0100:0x0040
 RCHK_VALUE = 0xA5
 RCHK_SAFE_MODE = safe
 RCHK_SAFE_SP = 0xF7F0

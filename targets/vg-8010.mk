@@ -26,13 +26,12 @@ BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
-# VG-8010 internal RAM is in slot 0 page 3.
-RCHK_PAGE = 3
-RCHK_SLOT = 0
-RCHK_ALLOWED_START = 0x0000
-RCHK_ALLOWED_END = 0x3FFF
-RCHK_OFFSET = 0x0000
-RCHK_LENGTH = 0x4000
+# VG-8010 internal RAM is in slot 0 page 3. (Slot 0 page 2 is also internal
+# RAM, but RCHK_EXEC_ADDR/RCHK_SAFE_SP below currently live in page 2's
+# external RAM, so it can't be added to this sweep without relocating them
+# first.)
+# page:slot:allowed_start:allowed_end:offset:length, one entry per internal-RAM page to sweep.
+RCHK_TESTS = 3:0:0x0000:0x3FFF:0x0000:0x4000
 RCHK_VALUE = 0xA5
 RCHK_SAFE_MODE = safe
 RCHK_SAFE_SP = 0xBFF0

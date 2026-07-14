@@ -10,6 +10,7 @@
 #define XSH_DELETE 0x7Fu
 #define XSH_CR 0x0Du
 #define XSH_LF 0x0Au
+#define XSH_TAB 0x09u
 #define XSH_WRITE_RETRY_MAX 64u
 #define XSH_ARGC_OVERFLOW 0xFFu
 
@@ -364,6 +365,130 @@ static void xsh_execute_line(xsh_t *sh)
     }
 }
 
+static uint8_t xsh_name_has_prefix(const uint8_t *name, const uint8_t *prefix, uint8_t prefix_len)
+{
+    uint8_t i;
+
+    for (i = 0u; i < prefix_len; ++i) {
+        if (name[i] != prefix[i]) {
+            return 0u;
+        }
+    }
+
+    return 1u;
+}
+
+/* Tab-completion, scoped to the command name (the line's first token)
+ * only -- once a space has been typed we're into argument territory,
+ * which this v1 doesn't attempt to complete. Extends the line to the
+ * longest prefix shared by every matching command name; if that leaves
+ * exactly one match, also appends a trailing space, same as a shell
+ * completing an unambiguous command. If more than one command still
+ * matches, lists every candidate on the line below and redraws the
+ * prompt plus what's been typed so far, same as a shell's completion
+ * listing. */
+static void xsh_complete(xsh_t *sh)
+{
+    const uint8_t *prefix;
+    uint8_t prefix_len;
+    uint8_t i;
+    const uint8_t *match = (const uint8_t *)0;
+    uint8_t match_count = 0u;
+    uint8_t common_len = 0u;
+
+    if ((sh == (xsh_t *)0) || (sh->cmd_table == (const xsh_cmd_t *)0)) {
+        return;
+    }
+
+    for (i = 0u; i < sh->line_len; ++i) {
+        if (sh->line[i] == (uint8_t)' ') {
+            return;
+        }
+    }
+
+    prefix = sh->line;
+    prefix_len = sh->line_len;
+
+    for (i = 0u; i < sh->cmd_count; ++i) {
+        const uint8_t *name = sh->cmd_table[i].name;
+        uint8_t name_len;
+
+        if (name == (const uint8_t *)0) {
+            continue;
+        }
+        name_len = xsh_strlen_u8(name);
+        if (name_len < prefix_len) {
+            continue;
+        }
+        if (xsh_name_has_prefix(name, prefix, prefix_len) == 0u) {
+            continue;
+        }
+
+        if (match_count == 0u) {
+            match = name;
+            common_len = name_len;
+        } else {
+            uint8_t max_common = (name_len < common_len) ? name_len : common_len;
+            uint8_t j = prefix_len;
+
+            while ((j < max_common) && (name[j] == match[j])) {
+                j++;
+            }
+            common_len = j;
+        }
+        match_count++;
+    }
+
+    if (match_count == 0u) {
+        return;
+    }
+
+    for (i = prefix_len; i < common_len; ++i) {
+        if (sh->line_len >= (uint8_t)(XSH_LINE_MAX - 1u)) {
+            break;
+        }
+        sh->line[sh->line_len] = match[i];
+        sh->line_len++;
+        xsh_write_bytes(sh, &match[i], 1u);
+    }
+
+    if (match_count == 1u) {
+        if (sh->line_len < (uint8_t)(XSH_LINE_MAX - 1u)) {
+            uint8_t space = (uint8_t)' ';
+
+            sh->line[sh->line_len] = space;
+            sh->line_len++;
+            xsh_write_bytes(sh, &space, 1u);
+        }
+        return;
+    }
+
+    xsh_newline(sh);
+    for (i = 0u; i < sh->cmd_count; ++i) {
+        const uint8_t *name = sh->cmd_table[i].name;
+
+        if (name == (const uint8_t *)0) {
+            continue;
+        }
+        if (xsh_strlen_u8(name) < prefix_len) {
+            continue;
+        }
+        if (xsh_name_has_prefix(name, prefix, prefix_len) == 0u) {
+            continue;
+        }
+        xsh_write_cstr(sh, name);
+        xsh_write_bytes(sh, (const uint8_t *)" ", 1u);
+    }
+    xsh_newline(sh);
+
+    if (xsh_try_prompt(sh) == 0u) {
+        sh->pending_prompt = 1u;
+    } else {
+        sh->pending_prompt = 0u;
+    }
+    xsh_write_bytes(sh, sh->line, sh->line_len);
+}
+
 static void xsh_on_char(xsh_t *sh, uint8_t ch)
 {
     if (sh == (xsh_t *)0) {
@@ -396,6 +521,11 @@ static void xsh_on_char(xsh_t *sh, uint8_t ch)
             sh->line_len--;
             xsh_write_bytes(sh, g_xsh_bs_seq, 3u);
         }
+        return;
+    }
+
+    if (ch == (uint8_t)XSH_TAB) {
+        xsh_complete(sh);
         return;
     }
 

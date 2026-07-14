@@ -107,13 +107,15 @@ $(BUILD_DIR)/target_autostart.h: setup
 	fi; \
 	printf "#endif\n" >> $@
 
+# RCHK_TESTS: space-separated list of "page:slot:allowed_start:allowed_end:offset:length"
+# entries (same colon-separated-fields-in-a-list style as BOOT_AUTOSTART),
+# one per internal-RAM page/slot to sweep. length=0 means "use the whole
+# allowed range". None of these may target the page RCHK_EXEC_ADDR/
+# RCHK_SAFE_SP live in (checked below) -- that page holds the running
+# trampoline/stack in external RAM, and switching it away mid-test would
+# corrupt them.
 $(BUILD_DIR)/target_rchk.h: setup
-	@rchk_page="$(strip $(RCHK_PAGE))"; \
-	rchk_slot="$(strip $(RCHK_SLOT))"; \
-	rchk_allowed_start="$(strip $(RCHK_ALLOWED_START))"; \
-	rchk_allowed_end="$(strip $(RCHK_ALLOWED_END))"; \
-	rchk_offset="$(strip $(RCHK_OFFSET))"; \
-	rchk_length="$(strip $(RCHK_LENGTH))"; \
+	@rchk_tests="$(strip $(RCHK_TESTS))"; \
 	rchk_value="$(strip $(RCHK_VALUE))"; \
 	rchk_safe_mode_raw="$(strip $(RCHK_SAFE_MODE))"; \
 	rchk_safe_sp="$(strip $(RCHK_SAFE_SP))"; \
@@ -124,21 +126,52 @@ $(BUILD_DIR)/target_rchk.h: setup
 		unsafe) rchk_safe_mode=0 ;; \
 		*) echo "RCHK_SAFE_MODE must be 'safe' or 'unsafe' in $(TARGET_MANIFEST)" >&2; exit 1 ;; \
 	esac; \
-	if [ -z "$$rchk_page" ] || [ -z "$$rchk_slot" ] || [ -z "$$rchk_allowed_start" ] || \
-	   [ -z "$$rchk_allowed_end" ] || [ -z "$$rchk_offset" ] || [ -z "$$rchk_length" ] || \
-	   [ -z "$$rchk_value" ] || [ -z "$$rchk_safe_mode_raw" ] || [ -z "$$rchk_safe_sp" ] || \
-	   [ -z "$$rchk_exec_addr" ] || [ -z "$$ppi_psr_port" ]; then \
-		echo "Missing RCHK_* or PPI_PSR_PORT in $(TARGET_MANIFEST)" >&2; \
+	if [ -z "$$rchk_tests" ] || [ -z "$$rchk_value" ] || [ -z "$$rchk_safe_mode_raw" ] || \
+	   [ -z "$$rchk_safe_sp" ] || [ -z "$$rchk_exec_addr" ] || [ -z "$$ppi_psr_port" ]; then \
+		echo "Missing RCHK_TESTS/RCHK_* or PPI_PSR_PORT in $(TARGET_MANIFEST)" >&2; \
 		exit 1; \
 	fi; \
+	safe_page=$$(( ($$rchk_exec_addr) >> 14 )); \
 	printf "/* Auto-generated from %s */\n" "$(TARGET_MANIFEST)" > $@; \
 	printf "#ifndef TARGET_RCHK_H\n#define TARGET_RCHK_H\n\n" >> $@; \
-	printf "#define RCHK_PAGE %su\n" "$$rchk_page" >> $@; \
-	printf "#define RCHK_SLOT %su\n" "$$rchk_slot" >> $@; \
-	printf "#define RCHK_ALLOWED_START %s\n" "$$rchk_allowed_start" >> $@; \
-	printf "#define RCHK_ALLOWED_END %s\n" "$$rchk_allowed_end" >> $@; \
-	printf "#define RCHK_OFFSET %s\n" "$$rchk_offset" >> $@; \
-	printf "#define RCHK_LENGTH %s\n" "$$rchk_length" >> $@; \
+	printf "#include <stdint.h>\n\n" >> $@; \
+	printf "typedef struct rchk_test_entry {\n" >> $@; \
+	printf "    uint8_t page;\n    uint8_t slot;\n    uint16_t allowed_start;\n    uint16_t allowed_end;\n    uint16_t offset;\n    uint16_t length;\n" >> $@; \
+	printf "} rchk_test_entry_t;\n\n" >> $@; \
+	count=0; \
+	for entry in $$rchk_tests; do \
+		page=$$(echo "$$entry" | cut -d: -f1); \
+		slot=$$(echo "$$entry" | cut -d: -f2); \
+		astart=$$(echo "$$entry" | cut -d: -f3); \
+		aend=$$(echo "$$entry" | cut -d: -f4); \
+		off=$$(echo "$$entry" | cut -d: -f5); \
+		len=$$(echo "$$entry" | cut -d: -f6); \
+		if [ -z "$$page" ] || [ -z "$$slot" ] || [ -z "$$astart" ] || [ -z "$$aend" ] || \
+		   [ -z "$$off" ] || [ -z "$$len" ] || [ "$$(echo "$$entry" | cut -d: -f7)" != "" ]; then \
+			echo "Invalid RCHK_TESTS entry '$$entry' (expected page:slot:allowed_start:allowed_end:offset:length) in $(TARGET_MANIFEST)" >&2; \
+			exit 1; \
+		fi; \
+		if [ "$$page" -eq "$$safe_page" ]; then \
+			echo "RCHK_TESTS entry '$$entry' targets page $$page, the same page RCHK_EXEC_ADDR/RCHK_SAFE_SP live in -- refusing to test the page hosting the running trampoline/stack" >&2; \
+			exit 1; \
+		fi; \
+		printf "#define RCHK_TEST_%s_PAGE %su\n" "$$count" "$$page" >> $@; \
+		printf "#define RCHK_TEST_%s_SLOT %su\n" "$$count" "$$slot" >> $@; \
+		printf "#define RCHK_TEST_%s_ALLOWED_START %s\n" "$$count" "$$astart" >> $@; \
+		printf "#define RCHK_TEST_%s_ALLOWED_END %s\n" "$$count" "$$aend" >> $@; \
+		printf "#define RCHK_TEST_%s_OFFSET %s\n" "$$count" "$$off" >> $@; \
+		printf "#define RCHK_TEST_%s_LENGTH %s\n\n" "$$count" "$$len" >> $@; \
+		count=$$((count + 1)); \
+	done; \
+	printf "#define RCHK_TEST_COUNT %su\n\n" "$$count" >> $@; \
+	printf "static const rchk_test_entry_t g_rchk_tests[RCHK_TEST_COUNT] = {\n" >> $@; \
+	idx=0; \
+	while [ "$$idx" -lt "$$count" ]; do \
+		printf "    { RCHK_TEST_%s_PAGE, RCHK_TEST_%s_SLOT, RCHK_TEST_%s_ALLOWED_START, RCHK_TEST_%s_ALLOWED_END, RCHK_TEST_%s_OFFSET, RCHK_TEST_%s_LENGTH },\n" \
+			"$$idx" "$$idx" "$$idx" "$$idx" "$$idx" "$$idx" >> $@; \
+		idx=$$((idx + 1)); \
+	done; \
+	printf "};\n\n" >> $@; \
 	printf "#define RCHK_VALUE %s\n" "$$rchk_value" >> $@; \
 	printf "#define RCHK_SAFE_MODE %su\n" "$$rchk_safe_mode" >> $@; \
 	printf "#define RCHK_SAFE_SP %s\n" "$$rchk_safe_sp" >> $@; \

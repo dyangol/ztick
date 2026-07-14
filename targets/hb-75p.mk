@@ -26,13 +26,11 @@ BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
-# HB-75P internal RAM is in slot 2 page 3.
-RCHK_PAGE = 3
-RCHK_SLOT = 2
-RCHK_ALLOWED_START = 0x0000
-RCHK_ALLOWED_END = 0x3FFF
-RCHK_OFFSET = 0x0000
-RCHK_LENGTH = 0x4000
+# HB-75P internal RAM (slot 2) covers all 4 pages, but RCHK_EXEC_ADDR/
+# RCHK_SAFE_SP below currently live in page 2's external RAM, so pages 0/1/3
+# are candidates for extending this sweep, not page 2.
+# page:slot:allowed_start:allowed_end:offset:length, one entry per internal-RAM page to sweep.
+RCHK_TESTS = 3:2:0x0000:0x3FFF:0x0000:0x4000
 RCHK_VALUE = 0xA5
 RCHK_SAFE_MODE = safe
 RCHK_SAFE_SP = 0xBFF0

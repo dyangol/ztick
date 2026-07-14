@@ -29,12 +29,8 @@ BOOT_AUTOSTART_STRICT = 1
 OPENMSX_EXTRA_ROM_FILES = startup_slot01.rom
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
-RCHK_PAGE = 2
-RCHK_SLOT = 0
-RCHK_ALLOWED_START = 0x0000
-RCHK_ALLOWED_END = 0x3FFF
-RCHK_OFFSET = 0x0000
-RCHK_LENGTH = 0x4000
+# page:slot:allowed_start:allowed_end:offset:length, one entry per internal-RAM page to sweep.
+RCHK_TESTS = 2:0:0x0000:0x3FFF:0x0000:0x4000
 RCHK_VALUE = 0xA5
 RCHK_SAFE_MODE = safe
 RCHK_SAFE_SP = 0xF7F0
