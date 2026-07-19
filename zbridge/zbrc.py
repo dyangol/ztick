@@ -21,9 +21,9 @@ and suffered the same slow/glitchy raw-ROM-output transitions seen on D0-D7
 during address changes; latching them gives clean, registered edges instead:
   D0-D2  : next state (fed back into the state 74HC374)
   D3     : F_WR   (FT245 WR)    - active high
-  D4     : F_RD_L (FT245 RD#)   - active low
+  D4     : EBUS_L (74HC245 OE#/CE#) - active low
   D5     : DIR    (74HC245 DIR) - direction; 1 = MSX bus -> FT245, no inverter
-  D6     : EBUS_L (74HC245 OE#/CE#) - active low
+  D6     : F_RD_L (FT245 RD#)   - active low
   D7     : RST_L  (FT245 RESET#) - active low; also latched (its own
            74HC374 bit), output wired to FT245's RESET# pin
 
@@ -35,7 +35,7 @@ is released. This matters because our state-machine clock (measured at
 unconditional one-cycle WRITE/READ would re-trigger IDLE->WRITE/READ
 repeatedly within the same Z80 access, producing multiple short EBUS_L/F_WR
 pulses instead of one continuous one spanning the whole access (confirmed
-on real hardware with a scope on D6/EBUS_L vs IORQ#).
+on real hardware with a scope on D4/EBUS_L vs IORQ#).
 
 IDLE -> RESET on any OUT to RESET_PORT (0x35), regardless of data value --
 the Z80 data bus isn't wired into any ROM address line (A0-A15 are already
@@ -196,9 +196,9 @@ def build_rom(target_port: int = TARGET_PORT, reset_port: int = RESET_PORT) -> b
 
         data = next_state
         data |= f_wr << 3
-        data |= f_rd_l << 4
+        data |= ebus_l << 4
         data |= dir_ << 5
-        data |= ebus_l << 6
+        data |= f_rd_l << 6
         data |= rst_l << 7
 
         rom[addr] = data
