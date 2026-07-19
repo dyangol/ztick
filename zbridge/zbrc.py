@@ -24,7 +24,8 @@ during address changes; latching them gives clean, registered edges instead:
   D4     : F_RD_L (FT245 RD#)   - active low
   D5     : DIR    (74HC245 DIR) - direction; 1 = MSX bus -> FT245, no inverter
   D6     : EBUS_L (74HC245 OE#/CE#) - active low
-  D7     : unused, always 0
+  D7     : RST_L  (FT245 RESET#) - active low; also latched (its own
+           74HC374 bit), output wired to FT245's RESET# pin
 
 States: IDLE -> WRITE on a matched OUT, IDLE -> READ on a matched IN with
 data available; WRITE/READ then HOLD (bus connected, F_WR/F_RD_L asserted)
@@ -35,6 +36,23 @@ unconditional one-cycle WRITE/READ would re-trigger IDLE->WRITE/READ
 repeatedly within the same Z80 access, producing multiple short EBUS_L/F_WR
 pulses instead of one continuous one spanning the whole access (confirmed
 on real hardware with a scope on D6/EBUS_L vs IORQ#).
+
+IDLE -> RESET on any OUT to RESET_PORT (0x35), regardless of data value --
+the Z80 data bus isn't wired into any ROM address line (A0-A15 are already
+fully committed to state + control signals + the full port number), so the
+ROM has no way to see what byte accompanied the write, only that one
+happened. RESET then HOLDs (RST_L asserted, FT245 bus left disconnected)
+using the exact same re-check pattern as WRITE/READ, for the same reason:
+returning to IDLE unconditionally after one FSM tick would let a still-open
+Z80 access immediately re-trigger IDLE->RESET, effectively holding RST_L low
+for as long as the Z80 access lasts anyway, just via repeated retriggers
+instead of one clean hold. Holding explicitly makes that intentional and
+correct instead of an accident of timing. This ties the reset pulse width to
+one Z80 OUT bus cycle (deterministic, set by the Z80's own clock, not by
+this FSM) -- if that turns out shorter than the FT245 needs (check RESET#'s
+minimum pulse width in its datasheet against a scope capture), a longer,
+explicitly-counted hold can be built later using the state field's 5 still-
+unused codes (3-7 in the current 3-bit A0-A2 encoding).
 
 Output files are 128 KiB (the real 64 KiB image mirrored into the unreachable
 upper half), matching the SST39SF010A's full physical size so programmers
@@ -60,33 +78,49 @@ import sys
 from pathlib import Path
 
 TARGET_PORT = 0x38  # IO_DEFAULT_PORT for targets/vg-8010.mk
+RESET_PORT = 0x35  # MSX -> zbridge FT245 RESET# trigger (see module docstring)
 
-_IO_DEFAULT_PORT_RE = re.compile(r"^\s*IO_DEFAULT_PORT\s*=\s*(\S+)")
-
-
-def read_target_port(target_name: str) -> int:
-    """Read IO_DEFAULT_PORT straight out of ztick's targets/<name>.mk."""
+def _read_target_mk_value(target_name: str, key: str) -> int:
+    """Read a single `KEY = 0xNN`-style value out of ztick's targets/<name>.mk."""
 
     manifest = Path(__file__).resolve().parent.parent / "targets" / f"{target_name}.mk"
     if not manifest.is_file():
         raise FileNotFoundError(f"no target manifest: {manifest}")
 
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=\s*(\S+)")
     for line in manifest.read_text(encoding="utf-8").splitlines():
-        match = _IO_DEFAULT_PORT_RE.match(line)
+        match = pattern.match(line)
         if match:
             return int(match.group(1), 0)
 
-    raise ValueError(f"IO_DEFAULT_PORT not found in {manifest}")
+    raise ValueError(f"{key} not found in {manifest}")
+
+
+def read_target_port(target_name: str) -> int:
+    """Read IO_DEFAULT_PORT straight out of ztick's targets/<name>.mk."""
+    return _read_target_mk_value(target_name, "IO_DEFAULT_PORT")
+
+
+def read_target_reset_port(target_name: str) -> int:
+    """Read IO_RESET_PORT straight out of ztick's targets/<name>.mk."""
+    return _read_target_mk_value(target_name, "IO_RESET_PORT")
 
 
 STATE_IDLE = 0
 STATE_WRITE = 1
 STATE_READ = 2
+STATE_RESET = 3
 
 ROM_SIZE = 1 << 16  # A0-A15
 
 
-def build_rom(target_port: int = TARGET_PORT) -> bytearray:
+def build_rom(target_port: int = TARGET_PORT, reset_port: int = RESET_PORT) -> bytearray:
+    if target_port == reset_port:
+        raise ValueError(
+            f"target_port and reset_port both 0x{target_port:02X} -- RESET_PORT must be "
+            "a distinct port from the FT245 data port"
+        )
+
     rom = bytearray(ROM_SIZE)
 
     for addr in range(ROM_SIZE):
@@ -105,13 +139,18 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
         # hold must keep re-checking these instead of trusting IORQ# alone).
         write_ok = iorq_l == 0 and txe_l == 0 and port == target_port and wr_l == 0
         read_ok = iorq_l == 0 and rxf_l == 0 and port == target_port and rd_l == 0
+        # RESET_PORT ignores RXF#/TXE# (irrelevant -- this isn't an FT245
+        # data transfer) and the data byte (unreachable, see module
+        # docstring): any OUT to this port is the trigger.
+        reset_ok = iorq_l == 0 and port == reset_port and wr_l == 0
 
-        # Safe defaults: stay/return to IDLE, bus disconnected.
+        # Safe defaults: stay/return to IDLE, bus disconnected, RST_L released.
         next_state = STATE_IDLE
         f_rd_l = 1
         f_wr = 0
         dir_ = 1
         ebus_l = 1
+        rst_l = 1
 
         if state == STATE_IDLE:
             if write_ok:
@@ -123,6 +162,9 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
                 f_rd_l = 0
                 dir_ = 0
                 ebus_l = 0
+            elif reset_ok:
+                next_state = STATE_RESET
+                rst_l = 0
         elif state == STATE_WRITE and write_ok:
             # Hold WRITE (bus connected, F_WR asserted) for as long as the
             # access stays valid: our state-machine clock (~282 ns) is
@@ -141,6 +183,14 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
             f_rd_l = 0
             dir_ = 0
             ebus_l = 0
+        elif state == STATE_RESET and reset_ok:
+            # Same hold pattern as WRITE/READ, for the same reason: without
+            # it, a still-open Z80 access would immediately re-trigger
+            # IDLE->RESET after one tick, which in practice holds RST_L low
+            # for the whole access anyway -- just via repeated retriggers
+            # instead of one clean, intentional hold.
+            next_state = STATE_RESET
+            rst_l = 0
         # Any unused state value, or a hold whose condition no longer
         # holds, falls through to the safe IDLE defaults set above.
 
@@ -149,6 +199,7 @@ def build_rom(target_port: int = TARGET_PORT) -> bytearray:
         data |= f_rd_l << 4
         data |= dir_ << 5
         data |= ebus_l << 6
+        data |= rst_l << 7
 
         rom[addr] = data
 
@@ -199,7 +250,14 @@ def parse_args() -> argparse.Namespace:
     )
     port_source.add_argument(
         "--target",
-        help="Read IO_DEFAULT_PORT from targets/<name>.mk instead (e.g. vg-8010, ztick)",
+        help="Read IO_DEFAULT_PORT/IO_RESET_PORT from targets/<name>.mk instead "
+             "(e.g. vg-8010, ztick)",
+    )
+    parser.add_argument(
+        "--reset-port", type=lambda s: int(s, 0),
+        help=f"MSX I/O port that triggers the FT245 RESET# pulse (default: read "
+             f"IO_RESET_PORT from the target manifest if --target is given, else "
+             f"0x{RESET_PORT:02X}); overrides either source if given",
     )
     return parser.parse_args()
 
@@ -210,16 +268,24 @@ def main() -> int:
     if args.target is not None:
         try:
             port = read_target_port(args.target)
+            reset_port = read_target_reset_port(args.target)
         except (FileNotFoundError, ValueError) as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
         print(f"using port 0x{port:02X} from targets/{args.target}.mk")
+        print(f"using reset port 0x{reset_port:02X} from targets/{args.target}.mk")
     elif args.port is not None:
         port = args.port
+        reset_port = RESET_PORT
     else:
         port = TARGET_PORT
+        reset_port = RESET_PORT
 
-    rom = build_rom(port)
+    if args.reset_port is not None:
+        reset_port = args.reset_port
+        print(f"using reset port 0x{reset_port:02X} from --reset-port")
+
+    rom = build_rom(port, reset_port)
 
     # SST39SF010A is 128 KiB (A0-A16). A16 is tied to 0V on this board, so
     # only the lower 64 KiB is ever addressed -- but programmers like

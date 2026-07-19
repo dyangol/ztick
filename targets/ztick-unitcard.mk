@@ -14,6 +14,9 @@ ADDR_STACK = 0xF7FF
 # Default application I/O port for io_write()/zbus
 IO_DEFAULT_PORT = 0x3A
 
+# MSX -> zbridge FT245 RESET# trigger port (see zbridge/zbrc.py)
+IO_RESET_PORT = 0x35
+
 # Boot-time PPI/PSR configuration
 PPI_CTRL_PORT = 0xAB
 PPI_PSR_PORT = 0xA8
