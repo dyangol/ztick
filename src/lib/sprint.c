@@ -124,6 +124,62 @@ uint8_t sprint_u8_dec(sprint_t *sp, uint8_t value)
     return sprint_u16_dec(sp, (uint16_t)value);
 }
 
+static uint8_t sprint_pad_spaces(sprint_t *sp, uint8_t written, uint8_t width)
+{
+    while (written < width) {
+        if (sprint_append_raw(sp, (uint8_t)' ') == 0u) {
+            return 0u;
+        }
+        written++;
+    }
+    return 1u;
+}
+
+uint8_t sprint_cstr_padded(sprint_t *sp, const uint8_t *text, uint8_t width)
+{
+    uint8_t start_len;
+
+    if (sp == (sprint_t *)0) {
+        return 0u;
+    }
+
+    start_len = sp->len;
+    if (sprint_cstr(sp, text) == 0u) {
+        return 0u;
+    }
+    return sprint_pad_spaces(sp, (uint8_t)(sp->len - start_len), width);
+}
+
+uint8_t sprint_u8_dec_padded(sprint_t *sp, uint8_t value, uint8_t width)
+{
+    uint8_t start_len;
+
+    if (sp == (sprint_t *)0) {
+        return 0u;
+    }
+
+    start_len = sp->len;
+    if (sprint_u8_dec(sp, value) == 0u) {
+        return 0u;
+    }
+    return sprint_pad_spaces(sp, (uint8_t)(sp->len - start_len), width);
+}
+
+uint8_t sprint_u16_dec_padded(sprint_t *sp, uint16_t value, uint8_t width)
+{
+    uint8_t start_len;
+
+    if (sp == (sprint_t *)0) {
+        return 0u;
+    }
+
+    start_len = sp->len;
+    if (sprint_u16_dec(sp, value) == 0u) {
+        return 0u;
+    }
+    return sprint_pad_spaces(sp, (uint8_t)(sp->len - start_len), width);
+}
+
 void sprint_emit_line(const sprint_t *sp)
 {
     if ((sp == (const sprint_t *)0) || (sp->buf == (uint8_t *)0)) {

@@ -185,6 +185,58 @@ static void xsh_cmd_emit_hex16(uint16_t value)
     xsh_write_u16_hex(g_xsh_cmd_emitter.sh, value);
 }
 
+/* Table-style column emitters: same buffer-with-fallback pattern as the
+ * plain xsh_cmd_emit_* above, just left-justified and padded with spaces
+ * to a fixed column width. Used only by the multi-row ("all slots")
+ * listings -- single-slot queries keep the plain key=value format, which
+ * is already self-describing and doesn't benefit from a header row. */
+static void xsh_cmd_emit_cstr_padded(const uint8_t *text, uint8_t width)
+{
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_cstr_padded(&g_xsh_cmd_emitter.sp, text, width) != 0u) {
+            return;
+        }
+        xsh_cmd_emit_fallback(good_len);
+    }
+    xsh_write_cstr(g_xsh_cmd_emitter.sh, text);
+}
+
+static void xsh_cmd_emit_u8_dec_padded(uint8_t value, uint8_t width)
+{
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_u8_dec_padded(&g_xsh_cmd_emitter.sp, value, width) != 0u) {
+            return;
+        }
+        xsh_cmd_emit_fallback(good_len);
+    }
+    xsh_write_u8_dec(g_xsh_cmd_emitter.sh, value);
+}
+
+static void xsh_cmd_emit_u16_dec_padded(uint16_t value, uint8_t width)
+{
+    if (g_xsh_cmd_emitter.buffered != 0u) {
+        uint8_t good_len = g_xsh_cmd_emitter.sp.len;
+        if (sprint_u16_dec_padded(&g_xsh_cmd_emitter.sp, value, width) != 0u) {
+            return;
+        }
+        xsh_cmd_emit_fallback(good_len);
+    }
+    xsh_write_u16_dec(g_xsh_cmd_emitter.sh, value);
+}
+
+static void xsh_cmd_emit_tty_padded(uint8_t slot, uint8_t width)
+{
+    uint8_t tty_id;
+
+    if (zbus_tty_get_for_task(slot, &tty_id) != 0u) {
+        xsh_cmd_emit_u8_dec_padded(tty_id, width);
+    } else {
+        xsh_cmd_emit_cstr_padded((const uint8_t *)"-", width);
+    }
+}
+
 /* tty= field for a task: unified so every emitter-based line always
  * includes it (an earlier version of xsh_cmd_emit_task_name_line's
  * buffered path silently omitted it while its fallback path included it,
@@ -658,17 +710,24 @@ static uint8_t xsh_cmd_task_name_len(uint8_t slot)
     return name_len;
 }
 
+static void xsh_cmd_emit_tasks_header(xsh_t *sh)
+{
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"slot", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"tty", 4u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"w", 2u);
+    xsh_cmd_emit_cstr((const uint8_t *)"name");
+    xsh_cmd_emit_finish();
+}
+
 static uint8_t xsh_cmd_emit_task_name_line(xsh_t *sh, uint8_t slot)
 {
     uint8_t name_len = xsh_cmd_task_name_len(slot);
 
     xsh_cmd_emit_begin(sh);
-    xsh_cmd_emit_cstr((const uint8_t *)"task ");
-    xsh_cmd_emit_u8_dec(slot);
-    xsh_cmd_emit_tty(slot);
-    xsh_cmd_emit_cstr((const uint8_t *)" w=");
-    xsh_cmd_emit_u8_dec(g_tasks[slot].weight);
-    xsh_cmd_emit_cstr((const uint8_t *)" name=");
+    xsh_cmd_emit_u8_dec_padded(slot, 5u);
+    xsh_cmd_emit_tty_padded(slot, 4u);
+    xsh_cmd_emit_u8_dec_padded(g_tasks[slot].weight, 2u);
     xsh_cmd_emit_name(g_tasks[slot].name, name_len);
     xsh_cmd_emit_finish();
     return 1u;
@@ -711,6 +770,7 @@ static uint8_t cmd_tasks(xsh_t *sh, uint8_t argc, uint8_t *argv[])
         }
 
         xsh_cmd_emit_tasks_summary(sh, active);
+        xsh_cmd_emit_tasks_header(sh);
 
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state == TASK_UNUSED) {
@@ -787,13 +847,48 @@ static void xsh_cmd_emit_heap_one(xsh_t *sh, uint8_t slot)
     xsh_newline(sh);
 }
 
+static void xsh_cmd_emit_heap_header(xsh_t *sh)
+{
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"slot", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"free", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"free_blk", 9u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"used_blk", 9u);
+    xsh_cmd_emit_cstr((const uint8_t *)"name");
+    xsh_cmd_emit_finish();
+}
+
+/* Table row for the unfiltered ("all slots") listing -- a separate
+ * function from xsh_cmd_emit_heap_one (kept as the plain key=value line
+ * for `heap <task_id>`, which doesn't need a header to be readable). */
+static void xsh_cmd_emit_heap_row(xsh_t *sh, uint8_t slot)
+{
+    heap_stats_t heap_stats;
+    uint8_t name_len;
+
+    if (rtos_heap_stats(slot, &heap_stats) == 0u) {
+        return;
+    }
+
+    name_len = xsh_cmd_task_name_len(slot);
+
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_u8_dec_padded(slot, 5u);
+    xsh_cmd_emit_u16_dec_padded(heap_stats.free_bytes, 5u);
+    xsh_cmd_emit_u8_dec_padded(heap_stats.free_blocks, 9u);
+    xsh_cmd_emit_u8_dec_padded(heap_stats.used_blocks, 9u);
+    xsh_cmd_emit_name(g_tasks[slot].name, name_len);
+    xsh_cmd_emit_finish();
+}
+
 static uint8_t cmd_heap(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     if (argc == 1u) {
         uint8_t slot;
+        xsh_cmd_emit_heap_header(sh);
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state != TASK_UNUSED) {
-                xsh_cmd_emit_heap_one(sh, slot);
+                xsh_cmd_emit_heap_row(sh, slot);
             }
         }
         return 1u;
@@ -848,13 +943,56 @@ static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
     xsh_cmd_emit_finish();
 }
 
+static void xsh_cmd_emit_stack_header(xsh_t *sh)
+{
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"slot", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"state", 12u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"size", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"peak", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"free_peak", 10u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"current", 8u);
+    xsh_cmd_emit_cstr((const uint8_t *)"name");
+    xsh_cmd_emit_finish();
+}
+
+/* Table row for the unfiltered ("all slots") listing -- a separate
+ * function from xsh_cmd_emit_stack_one (kept as the plain key=value line
+ * for `stack <task_id>`, which doesn't need a header to be readable). */
+static void xsh_cmd_emit_stack_row(xsh_t *sh, uint8_t slot)
+{
+    uint16_t peak_used;
+    uint16_t current_used;
+    uint16_t stack_size;
+    uint16_t free_peak;
+    uint8_t name_len;
+
+    if (rtos_stack_watermark(slot, &peak_used, &current_used, &stack_size) == 0u) {
+        return;
+    }
+
+    free_peak = (uint16_t)(stack_size - peak_used);
+    name_len = xsh_cmd_task_name_len(slot);
+
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_u8_dec_padded(slot, 5u);
+    xsh_cmd_emit_cstr_padded(xsh_cmd_task_state_name(g_tasks[slot].state), 12u);
+    xsh_cmd_emit_u16_dec_padded(stack_size, 5u);
+    xsh_cmd_emit_u16_dec_padded(peak_used, 5u);
+    xsh_cmd_emit_u16_dec_padded(free_peak, 10u);
+    xsh_cmd_emit_u16_dec_padded(current_used, 8u);
+    xsh_cmd_emit_name(g_tasks[slot].name, name_len);
+    xsh_cmd_emit_finish();
+}
+
 static uint8_t cmd_stack(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     if (argc == 1u) {
         uint8_t slot;
+        xsh_cmd_emit_stack_header(sh);
         for (slot = 0u; slot < MAX_TASKS; ++slot) {
             if (g_tasks[slot].state != TASK_UNUSED) {
-                xsh_cmd_emit_stack_one(sh, slot);
+                xsh_cmd_emit_stack_row(sh, slot);
             }
         }
         return 1u;
