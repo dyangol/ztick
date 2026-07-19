@@ -45,6 +45,7 @@ static const uint8_t g_xsh_cmd_usage_stop[] = "usage: stop <task_name>";
 static const uint8_t g_xsh_cmd_usage_weight[] = "usage: weight <task_id> <1..3>";
 static const uint8_t g_xsh_cmd_usage_heap[] = "usage: heap [task_id]";
 static const uint8_t g_xsh_cmd_usage_stack[] = "usage: stack [task_id]";
+static const uint8_t g_xsh_cmd_usage_cpu[] = "usage: cpu [task_id]";
 static const uint8_t g_xsh_cmd_name_tasks[] = "tasks";
 static const uint8_t g_xsh_cmd_name_start[] = "start";
 static const uint8_t g_xsh_cmd_name_stop[] = "stop";
@@ -52,6 +53,7 @@ static const uint8_t g_xsh_cmd_name_weight[] = "weight";
 static const uint8_t g_xsh_cmd_name_heap[] = "heap";
 static const uint8_t g_xsh_cmd_name_stack[] = "stack";
 static const uint8_t g_xsh_cmd_name_stats[] = "stats";
+static const uint8_t g_xsh_cmd_name_cpu[] = "cpu";
 
 static void xsh_cmd_write_task_tty(xsh_t *sh, uint8_t slot)
 {
@@ -1056,6 +1058,156 @@ static uint8_t cmd_stats(xsh_t *sh, uint8_t argc, uint8_t *argv[])
     return 1u;
 }
 
+/* busy_ticks/total_ticks are both counts from rtos_cpu_stats -- clamped to
+ * 100 defensively (0 total_ticks, or any transient part > total, just
+ * reads as 0%/100% rather than an undefined ratio).
+ *
+ * Deliberately uint16_t-only (no uint32_t): part*100 would overflow a
+ * 16-bit int for anything past 655, so both part and total are first
+ * halved together (preserving their ratio) until part is back in that
+ * safe range. This project has never used 32-bit arithmetic anywhere
+ * else on this SDCC/Z80 target, and a uint32_t version of this exact
+ * function measurably misbehaved on real hardware (every row read back
+ * 100% regardless of the actual ratio) -- staying within the width this
+ * codebase already relies on elsewhere avoids relying on a code path
+ * that's never been proven here. */
+static uint8_t xsh_cmd_percent(uint16_t part, uint16_t total)
+{
+    uint16_t scaled;
+
+    while ((part > 655u) || (total > 655u)) {
+        part = (uint16_t)(part >> 1);
+        total = (uint16_t)(total >> 1);
+    }
+
+    if (total == 0u) {
+        return 0u;
+    }
+
+    scaled = (uint16_t)((part * 100u) / total);
+    if (scaled > 100u) {
+        scaled = 100u;
+    }
+    return (uint8_t)scaled;
+}
+
+static void xsh_cmd_emit_cpu_header(xsh_t *sh)
+{
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"slot", 5u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"busy%", 6u);
+    xsh_cmd_emit_cstr_padded((const uint8_t *)"ticks", 6u);
+    xsh_cmd_emit_cstr((const uint8_t *)"name");
+    xsh_cmd_emit_finish();
+}
+
+static void xsh_cmd_emit_cpu_row(xsh_t *sh, uint8_t slot)
+{
+    uint16_t busy_ticks;
+    uint16_t idle_ticks;
+    uint16_t total_ticks;
+    uint8_t name_len;
+    uint8_t busy_pct;
+
+    if (rtos_cpu_stats(slot, &busy_ticks, &idle_ticks, &total_ticks) == 0u) {
+        return;
+    }
+
+    busy_pct = xsh_cmd_percent(busy_ticks, total_ticks);
+    name_len = xsh_cmd_task_name_len(slot);
+
+    xsh_cmd_emit_begin(sh);
+    xsh_cmd_emit_u8_dec_padded(slot, 5u);
+    xsh_cmd_emit_u8_dec_padded(busy_pct, 6u);
+    xsh_cmd_emit_u16_dec_padded(busy_ticks, 6u);
+    xsh_cmd_emit_name(g_tasks[slot].name, name_len);
+    xsh_cmd_emit_finish();
+}
+
+static uint8_t cmd_cpu(xsh_t *sh, uint8_t argc, uint8_t *argv[])
+{
+    uint16_t busy_ticks;
+    uint16_t idle_ticks;
+    uint16_t total_ticks;
+
+    if (argc == 1u) {
+        uint16_t busy_ticks_total;
+        uint8_t busy_pct;
+        uint8_t idle_pct;
+        uint8_t slot;
+
+        if (rtos_cpu_stats(0u, &busy_ticks, &idle_ticks, &total_ticks) == 0u) {
+            xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
+            xsh_newline(sh);
+            return 0u;
+        }
+
+        busy_ticks_total = (uint16_t)(total_ticks - idle_ticks);
+        busy_pct = xsh_cmd_percent(busy_ticks_total, total_ticks);
+        idle_pct = xsh_cmd_percent(idle_ticks, total_ticks);
+
+        xsh_cmd_emit_begin(sh);
+        xsh_cmd_emit_cstr((const uint8_t *)"cpu busy=");
+        xsh_cmd_emit_u8_dec(busy_pct);
+        xsh_cmd_emit_cstr((const uint8_t *)"% idle=");
+        xsh_cmd_emit_u8_dec(idle_pct);
+        xsh_cmd_emit_cstr((const uint8_t *)"% ticks=");
+        xsh_cmd_emit_u16_dec(total_ticks);
+        xsh_cmd_emit_finish();
+
+        xsh_cmd_emit_cpu_header(sh);
+        for (slot = 0u; slot < MAX_TASKS; ++slot) {
+            if (g_tasks[slot].state != TASK_UNUSED) {
+                xsh_cmd_emit_cpu_row(sh, slot);
+            }
+        }
+        return 1u;
+    }
+
+    if (argc == 2u) {
+        uint8_t slot_id;
+        uint8_t name_len;
+        uint8_t busy_pct;
+
+        if (xsh_parse_u8(argv[1], &slot_id) == 0u) {
+            xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_cpu);
+            return 0u;
+        }
+
+        if ((slot_id >= MAX_TASKS) || (g_tasks[slot_id].state == TASK_UNUSED)) {
+            xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
+            xsh_newline(sh);
+            return 0u;
+        }
+
+        if (rtos_cpu_stats(slot_id, &busy_ticks, &idle_ticks, &total_ticks) == 0u) {
+            xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
+            xsh_newline(sh);
+            return 0u;
+        }
+
+        busy_pct = xsh_cmd_percent(busy_ticks, total_ticks);
+        name_len = xsh_cmd_task_name_len(slot_id);
+
+        xsh_cmd_emit_begin(sh);
+        xsh_cmd_emit_cstr((const uint8_t *)"cpu ");
+        xsh_cmd_emit_u8_dec(slot_id);
+        xsh_cmd_emit_cstr((const uint8_t *)" busy=");
+        xsh_cmd_emit_u8_dec(busy_pct);
+        xsh_cmd_emit_cstr((const uint8_t *)"% ticks=");
+        xsh_cmd_emit_u16_dec(busy_ticks);
+        xsh_cmd_emit_cstr((const uint8_t *)"/");
+        xsh_cmd_emit_u16_dec(total_ticks);
+        xsh_cmd_emit_cstr((const uint8_t *)" name=");
+        xsh_cmd_emit_name(g_tasks[slot_id].name, name_len);
+        xsh_cmd_emit_finish();
+        return 1u;
+    }
+
+    xsh_cmd_emit_usage(sh, g_xsh_cmd_usage_cpu);
+    return 0u;
+}
+
 static const xsh_cmd_t g_xsh_cmds[] = {
     {g_xsh_cmd_name_help, g_xsh_cmd_name_help, 0u, 0u, cmd_help},
     {g_xsh_cmd_name_cfg, g_xsh_cmd_name_cfg, 0u, 0u, cmd_cfg},
@@ -1065,7 +1217,8 @@ static const xsh_cmd_t g_xsh_cmds[] = {
     {g_xsh_cmd_name_weight, g_xsh_cmd_usage_weight, 2u, 2u, cmd_weight},
     {g_xsh_cmd_name_heap, g_xsh_cmd_usage_heap, 0u, 1u, cmd_heap},
     {g_xsh_cmd_name_stack, g_xsh_cmd_usage_stack, 0u, 1u, cmd_stack},
-    {g_xsh_cmd_name_stats, g_xsh_cmd_name_stats, 0u, 0u, cmd_stats}
+    {g_xsh_cmd_name_stats, g_xsh_cmd_name_stats, 0u, 0u, cmd_stats},
+    {g_xsh_cmd_name_cpu, g_xsh_cmd_usage_cpu, 0u, 1u, cmd_cpu}
 };
 
 void xsh_cmd_init_xsh(xsh_t *sh)

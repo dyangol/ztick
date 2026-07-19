@@ -73,5 +73,10 @@ uint8_t rtos_heap_stats(uint8_t slot, heap_stats_t *out);
 uint8_t rtos_heap_stats_isr(uint8_t slot, heap_stats_t *out);
 uint8_t rtos_stack_watermark(uint8_t slot, uint16_t *out_peak_used, uint16_t *out_current_used, uint16_t *out_stack_size);
 uint8_t rtos_stack_watermark_isr(uint8_t slot, uint16_t *out_peak_used, uint16_t *out_current_used, uint16_t *out_stack_size);
+/* CPU busy-rate accounting (see g_task_busy_ticks in rtos.c): out_total_ticks
+ * is the same g_tick_count value for every slot in one call, out_idle_ticks
+ * likewise -- both included per-call so a caller gets a consistent snapshot
+ * (all three read under one DI/EI section) instead of racing a second call. */
+uint8_t rtos_cpu_stats(uint8_t slot, uint16_t *out_busy_ticks, uint16_t *out_idle_ticks, uint16_t *out_total_ticks);
 
 #endif
