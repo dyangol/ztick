@@ -52,6 +52,8 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/sprint.rel \
 	$(BUILD_DIR)/xsh.rel \
 	$(BUILD_DIR)/xsh_cmd.rel \
+	$(BUILD_DIR)/xsh_cmd_emit.rel \
+	$(BUILD_DIR)/xsh_cmd_report.rel \
 	$(BUILD_DIR)/boot.rel \
 	$(BUILD_DIR)/rtos.rel \
 	$(BUILD_DIR)/vdp_c.rel \
