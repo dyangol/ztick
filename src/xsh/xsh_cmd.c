@@ -666,6 +666,8 @@ static uint8_t xsh_cmd_emit_task_name_line(xsh_t *sh, uint8_t slot)
     xsh_cmd_emit_cstr((const uint8_t *)"task ");
     xsh_cmd_emit_u8_dec(slot);
     xsh_cmd_emit_tty(slot);
+    xsh_cmd_emit_cstr((const uint8_t *)" w=");
+    xsh_cmd_emit_u8_dec(g_tasks[slot].weight);
     xsh_cmd_emit_cstr((const uint8_t *)" name=");
     xsh_cmd_emit_name(g_tasks[slot].name, name_len);
     xsh_cmd_emit_finish();
@@ -817,6 +819,7 @@ static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
     uint16_t current_used;
     uint16_t stack_size;
     uint16_t free_peak;
+    uint8_t name_len;
 
     if (rtos_stack_watermark(slot, &peak_used, &current_used, &stack_size) == 0u) {
         xsh_write_cstr(sh, g_xsh_cmd_txt_bad_task);
@@ -825,10 +828,13 @@ static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
     }
 
     free_peak = (uint16_t)(stack_size - peak_used);
+    name_len = xsh_cmd_task_name_len(slot);
 
     xsh_cmd_emit_begin(sh);
     xsh_cmd_emit_cstr((const uint8_t *)"stack ");
     xsh_cmd_emit_u8_dec(slot);
+    xsh_cmd_emit_cstr((const uint8_t *)" state=");
+    xsh_cmd_emit_cstr(xsh_cmd_task_state_name(g_tasks[slot].state));
     xsh_cmd_emit_cstr((const uint8_t *)" size=");
     xsh_cmd_emit_u16_dec(stack_size);
     xsh_cmd_emit_cstr((const uint8_t *)" peak=");
@@ -837,6 +843,8 @@ static void xsh_cmd_emit_stack_one(xsh_t *sh, uint8_t slot)
     xsh_cmd_emit_u16_dec(free_peak);
     xsh_cmd_emit_cstr((const uint8_t *)" current=");
     xsh_cmd_emit_u16_dec(current_used);
+    xsh_cmd_emit_cstr((const uint8_t *)" name=");
+    xsh_cmd_emit_name(g_tasks[slot].name, name_len);
     xsh_cmd_emit_finish();
 }
 
