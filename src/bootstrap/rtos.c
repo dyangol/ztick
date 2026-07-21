@@ -29,16 +29,6 @@ volatile uint8_t g_boot_slot_value;
 static uint8_t g_task_stacks[MAX_TASKS][TASK_STACK_SIZE];
 static uint8_t g_kernel_stack[KERNEL_STACK_SIZE];
 
-/* CPU busy-rate accounting: incremented once per scheduler tick (50 Hz),
- * inside scheduler_select_next below. Resolution is one whole tick (20 ms)
- * -- a task credited for a tick may have blocked partway through it, so
- * this measures "which task/state the scheduler picked each tick", not
- * cycle-accurate occupancy. Kept private here (not in task_control_block_t)
- * and read back only through rtos_cpu_stats()'s DI/EI-guarded copy, since
- * the ISR updates these outside of any caller's control. */
-static uint16_t g_task_busy_ticks[MAX_TASKS];
-static uint16_t g_idle_ticks;
-
 static void task_reset_runtime_fields(uint8_t slot)
 {
     uint8_t i;
@@ -255,7 +245,6 @@ static uint8_t init_task_slot(uint8_t slot, void (*entry)(void), uint8_t weight,
     task_set_name(slot, name);
     task_weight_set_new(slot, weight);
     rtos_heap_reset_task(slot);
-    g_task_busy_ticks[slot] = 0u;
     return 1u;
 }
 
@@ -504,7 +493,6 @@ void scheduler_select_next(void)
         if (current->budget > 1u) {
             current->budget--;
             g_current_tcb = current;
-            g_task_busy_ticks[g_current_task]++;
             return;
         }
 
@@ -526,7 +514,6 @@ void scheduler_select_next(void)
             }
             g_current_task = probe;
             g_current_tcb = &g_tasks[probe];
-            g_task_busy_ticks[probe]++;
             return;
         }
 
@@ -534,7 +521,6 @@ void scheduler_select_next(void)
     }
 
     g_current_tcb = &g_tasks[g_current_task];
-    g_idle_ticks++;
 }
 
 void timer_init(void)
@@ -589,19 +575,4 @@ uint8_t rtos_stack_watermark(uint8_t slot, uint16_t *out_peak_used, uint16_t *ou
 uint8_t rtos_stack_watermark_isr(uint8_t slot, uint16_t *out_peak_used, uint16_t *out_current_used, uint16_t *out_stack_size)
 {
     return collect_task_stack_watermark(slot, out_peak_used, out_current_used, out_stack_size);
-}
-
-uint8_t rtos_cpu_stats(uint8_t slot, uint16_t *out_busy_ticks, uint16_t *out_idle_ticks, uint16_t *out_total_ticks)
-{
-    if ((slot >= MAX_TASKS) || (out_busy_ticks == (uint16_t *)0)
-        || (out_idle_ticks == (uint16_t *)0) || (out_total_ticks == (uint16_t *)0)) {
-        return 0u;
-    }
-
-    CPU_DI();
-    *out_busy_ticks = g_task_busy_ticks[slot];
-    *out_idle_ticks = g_idle_ticks;
-    *out_total_ticks = g_tick_count;
-    CPU_EI();
-    return 1u;
 }

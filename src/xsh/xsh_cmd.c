@@ -102,7 +102,7 @@ static uint8_t cmd_help(xsh_t *sh, uint8_t argc, uint8_t *argv[])
 {
     UNUSED(argc);
     UNUSED(argv);
-    xsh_cmd_emit_line(sh, (const uint8_t *)"commands: help cfg tasks start stop weight heap stack stats cpu");
+    xsh_cmd_emit_line(sh, (const uint8_t *)"commands: help cfg tasks start stop weight heap stack stats");
     return 1u;
 }
 
@@ -443,8 +443,7 @@ static const xsh_cmd_t g_xsh_cmds[] = {
     {g_xsh_cmd_name_weight, g_xsh_cmd_usage_weight, 2u, 2u, cmd_weight},
     {g_xsh_cmd_name_heap, g_xsh_cmd_usage_heap, 0u, 1u, cmd_heap},
     {g_xsh_cmd_name_stack, g_xsh_cmd_usage_stack, 0u, 1u, cmd_stack},
-    {g_xsh_cmd_name_stats, g_xsh_cmd_name_stats, 0u, 0u, cmd_stats},
-    {g_xsh_cmd_name_cpu, g_xsh_cmd_usage_cpu, 0u, 1u, cmd_cpu}
+    {g_xsh_cmd_name_stats, g_xsh_cmd_name_stats, 0u, 0u, cmd_stats}
 };
 
 void xsh_cmd_init_xsh(xsh_t *sh)
