@@ -29,10 +29,22 @@ BOOT_AUTOSTART = xsh:2 b:1 c:3
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
-# VG-8010 internal RAM is in slot 0 page 3. (Slot 0 page 2 is also internal
-# RAM, but RCHK_EXEC_ADDR/RCHK_SAFE_SP below currently live in page 2's
-# external RAM, so it can't be added to this sweep without relocating them
-# first.)
+# VG-8010 internal RAM (slot 0) covers pages 2 and 3, but only page 3 is
+# swept here. A page-2 entry has reliably corrupted or hung the running
+# system within a few chunks, across every reasonable trampoline placement
+# tried: code+stack together on page 3 (slot 0 committed, slot 2
+# uncommitted, as primary anchor or as a pass-2 relocation target), and code
+# on page 3 with the stack deliberately left at its original page-2 address
+# (0xBFF0, sweep narrowed to 0x0000-0x3FDF to protect it) -- that last one
+# hung with no output at all, rather than the garbled-then-reboot pattern of
+# the others, consistent with a corrupted psr_old landing in the PSR port
+# and remapping page 0 (the running code) out from under itself. Page 3 has
+# been remapped this way for a long time without issue; page 2 never had
+# been until these attempts. This points to a hardware-level issue specific
+# to page 2 (e.g. the expansion board's own decode/tri-state logic for that
+# page, which until now had never been asked to release the bus) rather
+# than anything fixable in software -- needs hardware-side investigation
+# before a page-2 entry is retried here.
 # page:slot:allowed_start:allowed_end:offset:length, one entry per internal-RAM page to sweep.
 RCHK_TESTS = 3:0:0x0000:0x3FFF:0x0000:0x4000
 RCHK_VALUE = 0xA5

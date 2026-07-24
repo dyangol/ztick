@@ -16,10 +16,12 @@
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_INFO 0x02u
 #define ZBUS_KERNEL_CTRL_CMD_GET_TASK_LIST 0x03u
 #define ZBUS_KERNEL_CTRL_CMD_GET_STACK_WM 0x07u
+#define ZBUS_KERNEL_CTRL_CMD_RESET_ZBRIDGE 0x08u
 #define ZBUS_KERNEL_CTRL_RSP_STATS 0x81u
 #define ZBUS_KERNEL_CTRL_RSP_TASK_INFO 0x82u
 #define ZBUS_KERNEL_CTRL_RSP_TASK_LIST 0x83u
 #define ZBUS_KERNEL_CTRL_RSP_STACK_WM 0x87u
+#define ZBUS_KERNEL_CTRL_RSP_RESET_ZBRIDGE 0x88u
 #define ZBUS_KERNEL_CTRL_STATUS_OK 0x00u
 #define ZBUS_KERNEL_CTRL_STATUS_MORE 0x80u
 #define ZBUS_KERNEL_CTRL_STATUS_BAD_CMD 0x01u
@@ -353,6 +355,16 @@ static void zbus_kernel_send_stack_wm_reply(uint8_t status, uint8_t task_id)
     zbus_kernel_send_payload(payload, (uint8_t)ZBUS_KERNEL_CTRL_REPLY_STACK_WM_LEN);
 }
 
+static void zbus_kernel_send_reset_reply(uint8_t status)
+{
+    uint8_t payload[2];
+
+    payload[0] = (uint8_t)ZBUS_KERNEL_CTRL_RSP_RESET_ZBRIDGE;
+    payload[1] = status;
+
+    zbus_kernel_send_payload(payload, 2u);
+}
+
 static void zbus_kernel_handle_control(const zlink_data_frame_t *rx_frame)
 {
     uint8_t cmd;
@@ -399,6 +411,18 @@ static void zbus_kernel_handle_control(const zlink_data_frame_t *rx_frame)
             return;
         }
         zbus_kernel_send_stack_wm_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK, task_id);
+    } else if (cmd == (uint8_t)ZBUS_KERNEL_CTRL_CMD_RESET_ZBRIDGE) {
+        if (rx_frame->len != 1u) {
+            zbus_kernel_send_reset_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_BAD_LEN);
+            return;
+        }
+        /* Reply first, synchronously (zbus_kernel_send_payload -> zlink_send_data
+         * writes the frame out over the local Z80<->zbridge bus right here, not
+         * via the queued g_zbus_tx_queue path zbus_tick() drains later) so the
+         * host sees confirmation before the reset bounces the USB link -- see
+         * io_reset_zbridge(). */
+        zbus_kernel_send_reset_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_OK);
+        io_reset_zbridge();
     } else {
         zbus_kernel_send_stats_reply((uint8_t)ZBUS_KERNEL_CTRL_STATUS_BAD_CMD);
     }

@@ -14,7 +14,6 @@
 
 /* Chunking and progress are tuned to keep the RAM trampoline small and the console readable. */
 #define RCHK_CHUNK_MAX 0xFFu
-#define RCHK_PROGRESS_STEP 5u
 #define RCHK_PROGRESS_MIN_LEN 512u
 
 /* Task identity and start-argument surface exposed to the loader/shell. */
@@ -88,17 +87,24 @@ static void rchk_emit_config_error(uint8_t page, const uint8_t *reason)
     pipe_flush();
 }
 
-static void rchk_emit_progress(uint8_t page, uint8_t percent)
+/* One line per chunk actually processed -- just the chunk's own address
+ * range, e.g. "0xC000-0xC0FE" -- so a hang or crash mid-sweep pinpoints
+ * exactly which bytes were being tested, rather than only a coarse
+ * percentage. The entry's total range isn't repeated here since it's
+ * already in the final rchk_emit_result() line and doesn't change
+ * chunk-to-chunk. */
+static void rchk_emit_progress(uint8_t page, uint16_t chunk_start, uint16_t chunk_end)
 {
-    uint8_t line[32];
+    uint8_t line[40];
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"rchk PROGRESS page=");
     (void)sprint_u8_dec(&out, page);
-    (void)sprint_cstr(&out, (const uint8_t *)" ");
-    (void)sprint_u8_dec(&out, percent);
-    (void)sprint_cstr(&out, (const uint8_t *)"%");
+    (void)sprint_cstr(&out, (const uint8_t *)" 0x");
+    (void)sprint_hex16(&out, chunk_start);
+    (void)sprint_cstr(&out, (const uint8_t *)"-0x");
+    (void)sprint_hex16(&out, chunk_end);
 
     if (sprint_ok(&out) != 0u) {
         sprint_emit_line(&out);
@@ -106,6 +112,29 @@ static void rchk_emit_progress(uint8_t page, uint8_t percent)
         pipe_write_cstr((const uint8_t *)"rchk ERR progress-msg-overflow");
         pipe_newline();
     }
+}
+
+/* Emitted once the trampoline relocates to its alternate anchor -- still
+ * worth a log line, even though (unlike an earlier version of this) it's no
+ * longer a lasting side effect: RCHK_ALT_EXEC_ADDR/RCHK_ALT_SAFE_SP stay on
+ * the trampoline's own trusted home slot, never the slot under test, so
+ * nothing about the system is left in a different state afterwards. */
+static void rchk_emit_relocate(uint8_t page)
+{
+    uint8_t line[32];
+    sprint_t out;
+
+    sprint_begin(&out, line, (uint8_t)sizeof(line));
+    (void)sprint_cstr(&out, (const uint8_t *)"rchk RELOCATE page=");
+    (void)sprint_u8_dec(&out, page);
+
+    if (sprint_ok(&out) != 0u) {
+        sprint_emit_line(&out);
+    } else {
+        pipe_write_cstr((const uint8_t *)"rchk ERR msg-overflow");
+        pipe_newline();
+    }
+    pipe_flush();
 }
 
 /* Runs the check for a single g_rchk_tests[] entry. Config errors (an
@@ -131,9 +160,6 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
     uint16_t remaining;
     uint16_t chunk_base;
     uint8_t progress_enabled;
-    uint8_t next_progress = (uint8_t)RCHK_PROGRESS_STEP;
-    uint8_t total_chunks = 0u;
-    uint8_t done_chunks = 0u;
 
     /* The build-time target defines the test window; reject impossible setups early. */
     if (allowed_start_off > allowed_end_off) {
@@ -158,9 +184,6 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
     remaining = req_len;
     chunk_base = range_start;
     progress_enabled = (req_len >= (uint16_t)RCHK_PROGRESS_MIN_LEN) ? 1u : 0u;
-    if (progress_enabled != 0u) {
-        total_chunks = (uint8_t)((req_len + ((uint16_t)RCHK_CHUNK_MAX - 1u)) / (uint16_t)RCHK_CHUNK_MAX);
-    }
 
     if (rtos_task_stop_requested() != 0u) {
         return;
@@ -180,6 +203,7 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
     while (remaining > 0u) {
         /* Keep each pass within a 255-byte chunk so the trampoline stays small. */
         uint8_t chunk_len = (remaining > (uint16_t)RCHK_CHUNK_MAX) ? (uint8_t)RCHK_CHUNK_MAX : (uint8_t)remaining;
+        uint16_t chunk_end = (uint16_t)(chunk_base + (uint16_t)chunk_len - 1u);
 
         rchk_prepare_chunk(chunk_base, chunk_len);
 
@@ -188,21 +212,12 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
             break;
         }
 
+        if (progress_enabled != 0u) {
+            rchk_emit_progress(page, chunk_base, chunk_end);
+        }
+
         chunk_base = (uint16_t)(chunk_base + (uint16_t)chunk_len);
         remaining = (uint16_t)(remaining - (uint16_t)chunk_len);
-
-        if (progress_enabled != 0u) {
-            uint8_t progress_pct;
-
-            done_chunks++;
-            progress_pct = (uint8_t)(((uint16_t)done_chunks * 100u) / (uint16_t)total_chunks);
-
-            /* Emit coarse progress only when a new threshold is crossed. */
-            while ((next_progress <= 100u) && (next_progress <= progress_pct)) {
-                rchk_emit_progress(page, next_progress);
-                next_progress = (uint8_t)(next_progress + (uint8_t)RCHK_PROGRESS_STEP);
-            }
-        }
     }
 
     /* Final report reflects the exact checked range and whether any byte mismatched. */
@@ -218,6 +233,10 @@ void main_rchk(void)
      * about it -- harmless either way, but this keeps the build quiet for
      * every target regardless of how many entries it configures. */
     uint8_t count = (uint8_t)RCHK_TEST_COUNT;
+    /* The page RCHK_EXEC_ADDR currently lives on -- entries that target this
+     * same page have to wait for pass 2, once the trampoline has relocated. */
+    uint8_t anchor_page = (uint8_t)(((uint16_t)RCHK_EXEC_ADDR) >> 14);
+    uint8_t deferred_pending = 0u;
     uint8_t i;
 
     /* Publish the runtime parameters consumed by the RAM-executed assembler
@@ -225,11 +244,37 @@ void main_rchk(void)
      * the same trampoline/stack location and safe/unsafe mode. */
     rchk_configure((uint8_t)RCHK_VALUE, safe_mode, (uint16_t)RCHK_SAFE_SP, (uint16_t)RCHK_EXEC_ADDR, (uint8_t)PPI_PSR_PORT);
 
+    /* Pass 1: every entry whose page differs from the trampoline's current
+     * page runs immediately. */
     for (i = 0u; i < count; ++i) {
         if (rtos_task_stop_requested() != 0u) {
             break;
         }
+        if (g_rchk_tests[i].page == anchor_page) {
+            deferred_pending = 1u;
+            continue;
+        }
         rchk_run_one(&g_rchk_tests[i], safe_mode);
+    }
+
+    /* Pass 2: relocate the trampoline to the target's declared alternate
+     * anchor (RCHK_ALT_EXEC_ADDR/RCHK_ALT_SAFE_SP) -- still on the
+     * trampoline's own trusted home slot, never the slot under test -- so
+     * entries sharing the primary anchor's page can run too. The Makefile
+     * guarantees these are set whenever such an entry exists. */
+    if ((deferred_pending != 0u) && (rtos_task_stop_requested() == 0u)) {
+        rchk_emit_relocate((uint8_t)(((uint16_t)RCHK_ALT_EXEC_ADDR) >> 14));
+        g_rchk_exec_addr = (uint16_t)RCHK_ALT_EXEC_ADDR;
+        g_rchk_safe_sp = (uint16_t)RCHK_ALT_SAFE_SP;
+
+        for (i = 0u; i < count; ++i) {
+            if (rtos_task_stop_requested() != 0u) {
+                break;
+            }
+            if (g_rchk_tests[i].page == anchor_page) {
+                rchk_run_one(&g_rchk_tests[i], safe_mode);
+            }
+        }
     }
 
     task_exit();
