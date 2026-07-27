@@ -19,6 +19,12 @@ void vdp_write_vram(uint16_t address, uint8_t value)
     vdp_write_data(value);
 }
 
+uint8_t vdp_read_vram(uint16_t address)
+{
+    vdp_set_read_address(address);
+    return vdp_read_data();
+}
+
 void vdp_fill_vram(uint16_t address, uint16_t length, uint8_t value)
 {
     vdp_set_write_address(address);

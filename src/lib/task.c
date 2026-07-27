@@ -9,12 +9,16 @@ extern const task_spec_t g_task_spec_xsh;
 extern const task_spec_t g_task_spec_b;
 extern const task_spec_t g_task_spec_c;
 extern const task_spec_t g_task_spec_rchk;
+extern const task_spec_t g_task_spec_vchk;
+extern const task_spec_t g_task_spec_gchk;
 
 static const task_spec_t *const g_task_specs[] = {
     &g_task_spec_xsh,
     &g_task_spec_b,
     &g_task_spec_c,
-    &g_task_spec_rchk
+    &g_task_spec_rchk,
+    &g_task_spec_vchk,
+    &g_task_spec_gchk
 };
 
 static uint8_t task_registry_size(void)

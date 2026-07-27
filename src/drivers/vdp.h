@@ -14,9 +14,12 @@ void vdp_fill_vram(uint16_t address, uint16_t length, uint8_t value);
 void vdp_write_block(uint16_t address, const uint8_t *data, uint16_t length);
 void vdp_define_char(uint8_t code, const uint8_t *pattern, uint8_t color);
 void vdp_putc(uint8_t x, uint8_t y, uint8_t code);
+uint8_t vdp_read_vram(uint16_t address);
 
 void vdp_write_register(uint8_t value, uint8_t reg);
 void vdp_set_write_address(uint16_t address);
 void vdp_write_data(uint8_t value);
+void vdp_set_read_address(uint16_t address);
+uint8_t vdp_read_data(void);
 
 #endif
