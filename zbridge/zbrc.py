@@ -51,8 +51,9 @@ correct instead of an accident of timing. This ties the reset pulse width to
 one Z80 OUT bus cycle (deterministic, set by the Z80's own clock, not by
 this FSM) -- if that turns out shorter than the FT245 needs (check RESET#'s
 minimum pulse width in its datasheet against a scope capture), a longer,
-explicitly-counted hold can be built later using the state field's 5 still-
-unused codes (3-7 in the current 3-bit A0-A2 encoding).
+explicitly-counted hold can be built later using the state field's 4 still-
+unused codes (4-7 in the current 3-bit A0-A2 encoding; STATE_RESET already
+claimed code 3).
 
 Output files are 128 KiB (the real 64 KiB image mirrored into the unreachable
 upper half), matching the SST39SF010A's full physical size so programmers
