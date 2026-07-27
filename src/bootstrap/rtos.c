@@ -295,11 +295,17 @@ static uint8_t boot_autostart_apply(uint8_t *out_first_slot)
     uint8_t i;
     uint8_t first_slot = (uint8_t)MAX_TASKS;
     uint8_t created_slot;
+    /* Copied to a variable (rather than comparing against
+     * TARGET_AUTOSTART_COUNT directly in the loop condition) so SDCC
+     * doesn't fold a single-entry target's trip count into a compile-time
+     * constant and warn about it -- see the same workaround in
+     * src/rchk/main_rchk.c's main_rchk(). */
+    uint8_t count = (uint8_t)TARGET_AUTOSTART_COUNT;
 
     if (out_first_slot == (uint8_t *)0) {
         return 0u;
     }
-    for (i = 0u; i < (uint8_t)TARGET_AUTOSTART_COUNT; ++i) {
+    for (i = 0u; i < count; ++i) {
         const task_spec_t *spec = task_registry_find(g_target_autostart[i].name);
         if (spec == (const task_spec_t *)0) {
             if (TARGET_AUTOSTART_STRICT != 0u) {

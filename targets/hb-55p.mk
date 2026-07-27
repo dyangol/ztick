@@ -25,7 +25,7 @@ BOOT_PSR_VALUE = 0x55
 BOOT_MARKER_VALUE = 0x5A
 
 # Boot-time autostart list: <task_name>:<weight>
-BOOT_AUTOSTART = xsh:2 b:1 c:3
+BOOT_AUTOSTART = xsh:2
 BOOT_AUTOSTART_STRICT = 1
 
 # RCHK (RAM check) memory-switch probe configuration (target-defined, not user-defined).
