@@ -427,6 +427,10 @@ Podem incloure aquests paràmetres per tal de personalitzar la compilació:
   * `yes`: genera també `bin/<target>/startup_slot01.rom`, els primers 32KB de `startup.rom`. Serveix per a dos casos:
     * gravar el codi en un xip real més petit i barat (p. ex. una EEPROM `AT28C256` de 32KB), ja que tot el codi hi cap dins la primera meitat de l'espai adreçable (`ADDR_CODE=0x0040`) i la resta (`ADDR_DATA=0x8000` en amunt) és RAM física a la placa, no contingut necessari a la flaix;
     * `ztick-unitcard`, que simula el flux d'arrencada en dues etapes a openMSX, necessita aquest fitxer com a `OPENMSX_EXTRA_ROM_FILES` del seu perfil de màquina (`scripts/setup_openmsx.sh` falla si no existeix). Com que `bootloader` i `startup` contenen sempre el mateix codi, `openmsx/Z-Tick-UnitCard.xml` referencia aquest mateix fitxer (`startup_slot01.rom`) tant per a la ROM del _slot 0_ com per a la del _slot 1_; no cal cap còpia amb un altre nom.
+* `GEN_MIRRORED_IMAGE`: només aplica amb `flash2x64`. Els seus valors per defecte es defineixen al manifest del target:
+  * `yes` (per defecte): `<ROM_IMAGE_NAME>` malla `startup.rom` a les dues meitats d'una imatge de 128KB, tal com es descriu més avall.
+  * `no`: `<ROM_IMAGE_NAME>` és una còpia plana, sense mallar, de 64KB de `startup.rom` -- per a un target l'arrencada en fred del qual ja no passa mai pel banc baix d'aquest xip (vegeu `hb-75p` més avall).
+* `EEPROM_IMAGE_NAME`: només aplica amb `flash2x64` i `GEN_COMPACT_IMAGE=yes`. Quan es defineix al manifest del target, també copia la imatge compacta de 32KB a `bin/<target>/<EEPROM_IMAGE_NAME>` -- un artefacte amb nom propi del target, pensat per gravar-lo en un segon xip físicament separat (vegeu `hb-75p` més avall).
 
 Exemple amb _override_ explícit:
 
@@ -446,6 +450,8 @@ El _layout_ `flash2x64` s'utilitza en targets físics com `hb-55p`, `hb-75p` i `
 * `bin/<target>/<ROM_IMAGE_NAME>` (128KB): la mateixa imatge concatenada amb ella mateixa (`startup.rom` + `startup.rom`), ja programable a la SST39SF010A.
 
 No hi ha cap `bootloader.s` diferent: `startup.s` conté alhora el vector de reset (`0x0000`), que ja fa el _Memory Switching_ inicial (`PPI_PSR_PORT <- BOOT_PSR_VALUE`) i salta a `_main_boot`. Com que el _slot 0_ (actiu al _power-on_) i el _slot_ de destí després del canvi contenen exactament el mateix codi als mateixos _offsets_, l'execució continua sense sorpreses independentment de quin dels dos bancs físics estigui mapat en cada moment; no cal, doncs, un binari de _bootloader_ separat i més petit, ni generar-lo com a fitxer a part.
+
+`hb-75p` n'és una excepció parcial. El seu port d'expansió té un conjunt de _buffers_ del bus de dades entre aquest i el bus del Z80, no habilitats just després del reset, així que una ROM situada a la flaix pròpia de la placa d'expansió no pot proporcionar el primer _fetch_ d'instrucció del _slot 0_ en aquell moment -- els _buffers_ bloquegen aquest camí de dades exactament llavors. L'arrencada en fred passa ara per una EEPROM genuïnament separada i sense _buffers_ (32KB, p. ex. `27C256`/`28C256`) situada físicament al socket original de la ROM de la màquina, generada a partir de la mateixa imatge compacta de 32KB descrita més amunt (`GEN_COMPACT_IMAGE=yes`, copiada a `EEPROM_IMAGE_NAME`) i fent servir exactament el mateix truc de "bytes idèntics a banda i banda del canvi" -- només ha canviat quin xip físic proporciona el _slot 0_. Com que el banc baix d'aquell xip ara és permanentment inabastable en aquest target, `hb-75p` també defineix `GEN_MIRRORED_IMAGE=no`: `<ROM_IMAGE_NAME>` esdevé una còpia plana de 64KB de `startup.rom`, amb només el contingut de "startup, RTOS" que encara s'assoleix després del canvi.
 
 # Execució amb openMSX
 OpenMSX és un emulador lliure i de codi obert per a ordinadors MSX, MSX2, MSX2+, MSX turboR i maquinari relacionat. El seu lema al repositori és “the MSX emulator that aims for perfection”, és a dir, un emulador orientat a alta fidelitat i precisió.

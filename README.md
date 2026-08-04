@@ -428,6 +428,10 @@ You can include these parameters to customize the build:
   * `yes`: also generates `bin/<target>/startup_slot01.rom`, the first 32 KB of `startup.rom`. This serves two purposes:
     * flashing the code onto a smaller, cheaper real chip (e.g. a 32 KB `AT28C256` EEPROM), since all the code fits within the first half of the address space (`ADDR_CODE=0x0040`) and the rest (`ADDR_DATA=0x8000` upward) is physical RAM on the board, not content that needs to live in flash;
     * `ztick-unitcard`, which simulates the staged two-phase boot flow in openMSX, needs this file as `OPENMSX_EXTRA_ROM_FILES` for its machine profile (`scripts/setup_openmsx.sh` fails if it does not exist). Since `bootloader` and `startup` always contain the same code, `openmsx/Z-Tick-UnitCard.xml` references this same file (`startup_slot01.rom`) for both the _slot 0_ and _slot 1_ ROM, so no copy under a different name is needed.
+* `GEN_MIRRORED_IMAGE`: only applies with `flash2x64`. Default values are defined in the target manifest:
+  * `yes` (default): `<ROM_IMAGE_NAME>` mirrors `startup.rom` into both halves of a 128 KB image, as described below.
+  * `no`: `<ROM_IMAGE_NAME>` is a plain, unmirrored 64 KB copy of `startup.rom` -- for a target whose cold boot no longer reaches this chip's low bank at all (see `hb-75p` below).
+* `EEPROM_IMAGE_NAME`: only applies with `flash2x64` and `GEN_COMPACT_IMAGE=yes`. When set in the target manifest, also copies the compact 32 KB image to `bin/<target>/<EEPROM_IMAGE_NAME>` -- a target-named artifact meant for flashing onto a second, physically separate chip (see `hb-75p` below).
 
 Example with explicit override:
 
@@ -447,6 +451,8 @@ The `flash2x64` layout is used for physical targets such as `hb-55p`, `hb-75p`, 
 * `bin/<target>/<ROM_IMAGE_NAME>` (128 KB): the same image concatenated with itself (`startup.rom` + `startup.rom`), ready to be programmed into the SST39SF010A.
 
 There is no separate `bootloader.s`: `startup.s` already contains the reset vector (`0x0000`), which performs the initial memory switching (`PPI_PSR_PORT <- BOOT_PSR_VALUE`) and jumps to `_main_boot`. Since _slot 0_ (active at power-on) and the destination slot after the switch hold exactly the same code at the same offsets, execution continues seamlessly regardless of which of the two physical banks is mapped at any given moment; a separate, smaller bootloader binary is therefore unnecessary, and there is no need to generate one as its own file either.
+
+`hb-75p` is a partial exception to this. Its expansion port has a set of data bus buffers between it and the Z80 bus, not enabled fresh off reset, so a ROM living on the expansion board's own flash cannot supply _slot 0_'s very first instruction fetch there -- the buffers block that data path at exactly that moment. Cold boot instead runs from a genuinely separate, unbuffered EEPROM (32 KB, e.g. `27C256`/`28C256`) physically placed in the machine's own original ROM socket, built from the same compact 32 KB image described above (`GEN_COMPACT_IMAGE=yes`, copied to `EEPROM_IMAGE_NAME`) and using the exact same "identical bytes on both sides of the switch" trick -- only the physical chip supplying _slot 0_ has moved. Since that chip's low bank is now permanently unreachable on this target, `hb-75p` also sets `GEN_MIRRORED_IMAGE=no`: `<ROM_IMAGE_NAME>` becomes a plain 64 KB copy of `startup.rom`, holding only the "startup, RTOS" content still reached after the switch.
 
 # Running with openMSX
 OpenMSX is a free and open-source emulator for MSX, MSX2, MSX2+, MSX turboR, and related hardware. Its repository motto is “the MSX emulator that aims for perfection”, i.e. an emulator focused on high fidelity and accuracy.
