@@ -4,6 +4,7 @@
 #include "../bootstrap/rtos.h"
 #include "../drivers/zbus.h"
 #include "target_autostart.h"
+#include "target_version.h"
 #include "../lib/task.h"
 #include "xsh.h"
 #include "xsh_cmd.h"
@@ -26,7 +27,13 @@ static const uint8_t g_boot_cfg_line_1[] = "cfg task_heap=" XSH_CMD_STR(TASK_HEA
 static const uint8_t g_boot_cfg_line_2[] = "cfg zbus tty=" XSH_CMD_STR(ZBUS_MAX_TTY) " rx=" XSH_CMD_STR(ZBUS_BUFFER_SIZE) " txq=" XSH_CMD_STR(ZBUS_TX_QUEUE_SIZE) "\r\n";
 static const uint8_t g_boot_cfg_line_3[] = "cfg ipc sem_queue=1\r\n";
 static const uint8_t g_boot_cfg_line_4[] = "cfg autostart=" TARGET_AUTOSTART_RAW "\r\n";
-static const uint8_t g_xsh_cmd_banner[] = "Z-Tick xsh\r\n";
+static const uint8_t g_xsh_cmd_banner[] =
+    "+-+-+-+-+-+-+\r\n"
+    "|Z|-|T|I|C|K|\r\n"
+    "+-+-+-+-+-+-+\r\n"
+    TARGET_NAME_STR "\r\n"
+    TARGET_VERSION_STR "\r\n"
+    "\r\n";
 static const uint8_t g_xsh_cmd_prompt[] = "ztick> ";
 static const uint8_t g_xsh_cmd_txt_unknown[] = "unknown command";
 /* help/cfg/stats have no argument-usage text of their own: name doubles as usage. */

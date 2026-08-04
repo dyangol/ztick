@@ -115,6 +115,22 @@ $(BUILD_DIR)/target_autostart.h: setup
 	fi; \
 	printf "#endif\n" >> $@
 
+# TARGET_NAME_STR/TARGET_VERSION_STR: already-quoted string macros (like
+# TARGET_AUTOSTART_RAW above), meant to be spliced via adjacent-string-
+# literal concatenation into a C string literal at the include site (see
+# xsh_cmd.c's g_xsh_cmd_banner) -- not stringified via XSH_CMD_STR(), since
+# that's only needed for raw (non-string) macro tokens like MAX_TASKS.
+# TARGET_VERSION_STR falls back to "unknown" if git isn't available (should
+# never happen in this repo, but a build shouldn't hard-fail over a banner).
+$(BUILD_DIR)/target_version.h: setup
+	@version=$$(git -C $(CURDIR) describe --tags --always --dirty 2>/dev/null); \
+	if [ -z "$$version" ]; then version="unknown"; fi; \
+	printf "/* Auto-generated from %s and \`git describe\` */\n" "$(TARGET_MANIFEST)" > $@; \
+	printf "#ifndef TARGET_VERSION_H\n#define TARGET_VERSION_H\n\n" >> $@; \
+	printf "#define TARGET_NAME_STR \"%s\"\n" "$(TARGET_NAME)" >> $@; \
+	printf "#define TARGET_VERSION_STR \"%s\"\n\n" "$$version" >> $@; \
+	printf "#endif\n" >> $@
+
 # RCHK_TESTS: space-separated list of "page:slot:allowed_start:allowed_end:offset:length"
 # entries (same colon-separated-fields-in-a-list style as BOOT_AUTOSTART),
 # one per internal-RAM page/slot to sweep. length=0 means "use the whole
@@ -206,7 +222,7 @@ $(BUILD_DIR)/target_rchk.h: setup
 	printf "#define PPI_PSR_PORT %s\n\n" "$$ppi_psr_port" >> $@; \
 	printf "#endif\n" >> $@
 
-bootstrap: $(BUILD_DIR)/target_boot.inc $(BUILD_DIR)/target_autostart.h $(BUILD_DIR)/target_rchk.h
+bootstrap: $(BUILD_DIR)/target_boot.inc $(BUILD_DIR)/target_autostart.h $(BUILD_DIR)/target_rchk.h $(BUILD_DIR)/target_version.h
 ifeq ($(IMAGE_LAYOUT),flash2x64)
 	@echo ">> Building firmware: startup (flash2x64 compatibility image) [TARGET=$(TARGET)]"
 	$(AS) -I$(BUILD_DIR) -o $(BUILD_DIR)/startup.rel $(SRC_DIR)/bootstrap/startup.s

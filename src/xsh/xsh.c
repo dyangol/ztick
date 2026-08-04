@@ -151,16 +151,34 @@ void xsh_set_unknown_text(xsh_t *sh, const uint8_t *unknown_cmd_text)
     sh->unknown_cmd_text = (unknown_cmd_text != (const uint8_t *)0) ? unknown_cmd_text : g_xsh_default_unknown;
 }
 
+/* zbus_write_tty() rejects outright (no partial send) anything longer than
+ * one zlink frame's payload (ZBUS_FRAME_MAX_LEN) -- chunk transparently so
+ * callers (xsh_write_cstr and everything built on it, e.g. the boot banner)
+ * can write strings of any length without needing to know about the wire's
+ * per-frame limit. Same fix as pipe_write_bytes_retry() in
+ * src/lib/pipe.c, for the same reason: confirmed on real hardware that a
+ * banner longer than 64 bytes was silently dropped in full. */
 void xsh_write_bytes(const xsh_t *sh, const uint8_t *data, uint8_t len)
 {
-    uint8_t retries = XSH_WRITE_RETRY_MAX;
+    while (len > 0u) {
+        uint8_t chunk_len = (len > (uint8_t)ZBUS_FRAME_MAX_LEN) ? (uint8_t)ZBUS_FRAME_MAX_LEN : len;
+        uint8_t retries = XSH_WRITE_RETRY_MAX;
+        uint8_t sent = 0u;
 
-    while (retries > 0u) {
-        if (xsh_try_write_bytes(sh, data, len) != 0u) {
+        while (retries > 0u) {
+            if (xsh_try_write_bytes(sh, data, chunk_len) != 0u) {
+                sent = 1u;
+                break;
+            }
+            retries--;
+            CPU_NOP();
+        }
+        if (sent == 0u) {
             return;
         }
-        retries--;
-        CPU_NOP();
+
+        data = data + chunk_len;
+        len = (uint8_t)(len - chunk_len);
     }
 }
 
