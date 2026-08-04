@@ -120,7 +120,14 @@ static uint8_t gchk_wait_ticks(uint16_t ticks)
 
 /* Pattern 1: 8 solid vertical bands, one per color 1-15 (skipping every
  * other one), each its own character code so it gets its own color-table
- * entry -- confirms all colors render distinctly and in the right place. */
+ * entry -- confirms all colors render distinctly and in the right place.
+ * DI/EI-wrapped for the same reason as gchk_reset_screen(): vdp_define_char()
+ * and the vdp_putc() sweep below are all multi-write VDP sequences relying
+ * on address state (auto-increment or a just-set write address) staying
+ * intact across writes; a task switch into activity_indicator partway
+ * through would interleave its own VDP writes and corrupt the rest of the
+ * pattern (confirmed on real hardware: showed up as "jailbars" instead of a
+ * clean fill). */
 static void gchk_pattern_colorbars(void)
 {
     static const uint8_t solid_glyph[8] = {
@@ -129,6 +136,7 @@ static void gchk_pattern_colorbars(void)
     uint8_t band;
     uint8_t band_width = (uint8_t)((uint8_t)GCHK_GRID_COLS / 8u);
 
+    CPU_DI();
     for (band = 0u; band < 8u; ++band) {
         uint8_t code = (uint8_t)(band * 8u);
         uint8_t color = (uint8_t)(band + 1u);
@@ -146,6 +154,7 @@ static void gchk_pattern_colorbars(void)
             }
         }
     }
+    CPU_EI();
 }
 
 /* Pattern 2: alternating blank/solid glyphs across the whole 32x24 grid --
@@ -159,6 +168,7 @@ static void gchk_pattern_checkerboard(void)
     uint8_t x;
     uint8_t y;
 
+    CPU_DI();
     vdp_define_char(0u, blank_glyph, 0xF1u);
     vdp_define_char(1u, solid_glyph, 0xF1u);
 
@@ -167,6 +177,7 @@ static void gchk_pattern_checkerboard(void)
             vdp_putc(x, y, (uint8_t)(((x + y) & 1u) ? 1u : 0u));
         }
     }
+    CPU_EI();
 }
 
 /* Pattern 3: a blank screen with a marker at each of the 4 corners --
@@ -178,6 +189,7 @@ static void gchk_pattern_corners(void)
     uint8_t x;
     uint8_t y;
 
+    CPU_DI();
     for (y = 0u; y < (uint8_t)GCHK_GRID_ROWS; ++y) {
         for (x = 0u; x < (uint8_t)GCHK_GRID_COLS; ++x) {
             vdp_putc(x, y, 0u);
@@ -188,6 +200,7 @@ static void gchk_pattern_corners(void)
     vdp_putc((uint8_t)(GCHK_GRID_COLS - 1u), 0u, 1u);
     vdp_putc(0u, (uint8_t)(GCHK_GRID_ROWS - 1u), 1u);
     vdp_putc((uint8_t)(GCHK_GRID_COLS - 1u), (uint8_t)(GCHK_GRID_ROWS - 1u), 1u);
+    CPU_EI();
 }
 
 /* Pattern 4: cycles the backdrop/border color (R7 low nibble) through all 15
@@ -202,8 +215,13 @@ static void gchk_pattern_borders(uint16_t total_ticks)
     uint16_t ticks_per_color = (uint16_t)(total_ticks / (uint16_t)GCHK_BORDER_COLOR_COUNT);
     uint8_t color;
 
+    /* DI/EI only around the two bulk VRAM writes -- see gchk_pattern_colorbars()
+     * for why. Left out of the per-color loop below on purpose: it calls
+     * gchk_wait_ticks(), which needs the tick interrupt running. */
+    CPU_DI();
     vdp_fill_vram(VDP_NAME_TABLE_ADDR, 0x0300u, 0u);
     vdp_write_block(VDP_SPRITE_ATTR_ADDR, hide_attr, 4u);
+    CPU_EI();
 
     for (color = 1u; color <= (uint8_t)GCHK_BORDER_COLOR_COUNT; ++color) {
         vdp_write_register((uint8_t)(GCHK_R7_TEXT_COLOR | color), 7u);
@@ -229,6 +247,9 @@ static void gchk_pattern_sprite(uint16_t total_ticks)
     uint16_t start = g_tick_count;
     uint16_t last_move = start;
 
+    /* DI/EI-wrapped for the same reason as gchk_pattern_colorbars() -- see
+     * that function's comment. */
+    CPU_DI();
     vdp_write_block(VDP_SPRITE_PATTERN_ADDR, sprite_pattern, 8u);
 
     attr[0] = 100u; /* Y */
@@ -236,6 +257,7 @@ static void gchk_pattern_sprite(uint16_t total_ticks)
     attr[2] = 0u;   /* NAME: sprite pattern block 0 */
     attr[3] = 15u;  /* color=white, EC=0 */
     vdp_write_block(VDP_SPRITE_ATTR_ADDR, attr, 4u);
+    CPU_EI();
 
     while ((uint16_t)(g_tick_count - start) < total_ticks) {
         if (rtos_task_stop_requested() != 0u) {
@@ -244,7 +266,9 @@ static void gchk_pattern_sprite(uint16_t total_ticks)
         if ((uint16_t)(g_tick_count - last_move) >= (uint16_t)GCHK_SPRITE_STEP_TICKS) {
             last_move = g_tick_count;
             x = (x < (uint8_t)GCHK_SPRITE_X_MAX) ? (uint8_t)(x + 1u) : 0u;
+            CPU_DI();
             vdp_write_vram((uint16_t)(VDP_SPRITE_ATTR_ADDR + 1u), x);
+            CPU_EI();
         }
     }
 }
