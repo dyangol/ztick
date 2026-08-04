@@ -24,6 +24,10 @@ extern volatile uint16_t g_rchk_exec_addr;
 extern volatile uint8_t g_rchk_fail;
 extern volatile uint16_t g_rchk_fail_addr;
 extern volatile uint8_t g_rchk_read_value;
+/* Count of bytes that mismatched within the chunk just run (0..length).
+ * g_rchk_fail_addr/g_rchk_read_value always describe the *first* mismatch
+ * in the chunk, even though every byte is still tested. */
+extern volatile uint8_t g_rchk_fail_count;
 
 /* Configure persistent rchk parameters. */
 void rchk_configure(uint8_t value, uint8_t safe_mode, uint16_t safe_sp, uint16_t exec_addr, uint8_t psr_port);

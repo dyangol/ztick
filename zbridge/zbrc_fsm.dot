@@ -1,0 +1,56 @@
+// zbridge FSM (see zbrc.py's build_rom()) -- combinational ROM lookup
+// table addressed by {state(A0-A2), RXF#(A3), TXE#(A4), WR#(A5), RD#(A6),
+// IORQ#(A7), MSX port(A8-A15)}, output latched by a 74HC374 (state, D0-D2)
+// plus a second 74HC374 (control signals, D3-D6) and RST_L's own latch bit
+// (D7), all clocked together -- so from outside the ROM this behaves as a
+// standard Moore machine: each state's control outputs are stable for as
+// long as that state is held.
+//
+// Render with: dot -Tpng zbrc_fsm.dot -o zbrc_fsm.png
+
+digraph zbridge_fsm {
+    rankdir=LR;
+    fontname="Helvetica";
+    label="zbridge FSM (zbrc.py build_rom())\nWRITE/READ/RESET each HOLD (re-checking their entry condition every\ncycle) for as long as the Z80 keeps the access open, instead of\nreturning to IDLE after one clock -- see zbrc.py module docstring.";
+    labelloc="t";
+    fontsize=14;
+    node [shape=box, style="rounded,filled", fontname="Helvetica", fontsize=11];
+    edge [fontname="Helvetica", fontsize=10];
+
+    IDLE [
+        label="IDLE (state=0)\nF_WR=0  EBUS_L=1  DIR=1  F_RD_L=1  RST_L=1\nFT245 bus disconnected (74HC245 held in high-Z)"
+        fillcolor="#e8e8e8"
+    ];
+    WRITE [
+        label="WRITE (state=1)\nF_WR=1  EBUS_L=0  DIR=1  F_RD_L=1  RST_L=1\nMSX bus -> FT245, F_WR asserted (FT245 WR is\nrising-edge-triggered, so the hold below does not\nproduce extra writes)"
+        fillcolor="#cfe3ff"
+    ];
+    READ [
+        label="READ (state=2)\nF_WR=0  EBUS_L=0  DIR=0  F_RD_L=0  RST_L=1\nFT245 -> MSX bus, F_RD_L asserted"
+        fillcolor="#d3f2d3"
+    ];
+    RESET [
+        label="RESET (state=3)\nF_WR=0  EBUS_L=1  DIR=1  F_RD_L=1  RST_L=0\nFT245 RESET# asserted, bus left disconnected"
+        fillcolor="#ffd6d6"
+    ];
+    UNUSED [
+        label="unused codes (state=4-7)\n4 still-unused 3-bit encodings\n(never written as a next_state by this ROM)"
+        shape=box, style="rounded,dashed", fillcolor="#f5f5f5"
+    ];
+
+    IDLE -> WRITE [label="write_ok:\nport==TARGET_PORT & IORQ#=0\n& WR#=0 & TXE#=0"];
+    IDLE -> READ  [label="read_ok:\nport==TARGET_PORT & IORQ#=0\n& RD#=0 & RXF#=0"];
+    IDLE -> RESET [label="reset_ok:\nport==RESET_PORT & IORQ#=0\n& WR#=0  (data byte ignored --\nnot wired to any ROM address line)"];
+    IDLE -> IDLE  [label="else (no match)"];
+
+    WRITE -> WRITE [label="write_ok still true (hold:\nsame access still open)"];
+    WRITE -> IDLE  [label="write_ok false\n(IORQ# released, TXE# deasserted,\nor a different port/strobe)"];
+
+    READ -> READ [label="read_ok still true (hold)"];
+    READ -> IDLE [label="read_ok false"];
+
+    RESET -> RESET [label="reset_ok still true (hold)"];
+    RESET -> IDLE  [label="reset_ok false"];
+
+    UNUSED -> IDLE [label="always\n(safe-default fallthrough,\ne.g. a power-on glitch state)", style=dashed];
+}

@@ -9,6 +9,8 @@ include $(TARGET_MANIFEST)
 
 IMAGE_LAYOUT ?= flat64
 GEN_COMPACT_IMAGE ?= no
+GEN_MIRRORED_IMAGE ?= yes
+EEPROM_IMAGE_NAME ?=
 BOOT_AUTOSTART ?=
 BOOT_AUTOSTART_STRICT ?= 1
 
@@ -51,6 +53,7 @@ COMMON_REL_OBJECTS = \
 	$(BUILD_DIR)/args.rel \
 	$(BUILD_DIR)/pipe.rel \
 	$(BUILD_DIR)/sprint.rel \
+	$(BUILD_DIR)/chunk_report.rel \
 	$(BUILD_DIR)/xsh.rel \
 	$(BUILD_DIR)/xsh_cmd.rel \
 	$(BUILD_DIR)/xsh_cmd_emit.rel \
@@ -226,10 +229,19 @@ ifeq ($(IMAGE_LAYOUT),flash2x64)
 		$(COMMON_REL_OBJECTS) \
 		-o $(BIN_DIR)/startup.ihx
 	makebin -s $(ROM_BANK_SIZE) $(BIN_DIR)/startup.ihx $(BIN_DIR)/startup.rom
+ifeq ($(GEN_MIRRORED_IMAGE),yes)
 	cat $(BIN_DIR)/startup.rom $(BIN_DIR)/startup.rom > $(BIN_DIR)/$(ROM_IMAGE_NAME)
+else
+	cp $(BIN_DIR)/startup.rom $(BIN_DIR)/$(ROM_IMAGE_NAME)
+	@echo ">> Note: single 64KB image, not mirrored -- this target's cold boot no longer runs through this chip's low bank (see its target manifest)"
+endif
 ifeq ($(GEN_COMPACT_IMAGE),yes)
 	head -c 32768 $(BIN_DIR)/startup.rom > $(BIN_DIR)/startup_slot01.rom
 	@echo ">> Success: compact 32KB image generated (startup_slot01.rom)"
+ifneq ($(EEPROM_IMAGE_NAME),)
+	cp $(BIN_DIR)/startup_slot01.rom $(BIN_DIR)/$(EEPROM_IMAGE_NAME)
+	@echo ">> Success: EEPROM image (original ROM socket) generated ($(EEPROM_IMAGE_NAME))"
+endif
 endif
 	@echo ">> Success: startup image generated"
 else

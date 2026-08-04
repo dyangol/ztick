@@ -22,6 +22,7 @@
 .globl _g_rchk_fail
 .globl _g_rchk_fail_addr
 .globl _g_rchk_read_value
+.globl _g_rchk_fail_count
 
 .area _CODE
 
@@ -58,28 +59,35 @@ _rchk_exec_stub:
     ld a, (_g_rchk_psr_new)
     out (c), a
 
+    ; Every byte in the chunk is tested regardless of earlier failures --
+    ; g_rchk_fail_count (reset by rchk_prepare_chunk()) tallies them all,
+    ; while g_rchk_fail_addr/g_rchk_read_value latch only the first one
+    ; (see _rchk_record_fail). Unlike the old stop-at-first-failure version,
+    ; `c` (the PSR port) is no longer live across the whole loop -- it's
+    ; reused below as scratch for the original byte, and reloaded from
+    ; g_rchk_psr_port at _rchk_done before the final `out`.
 _rchk_loop:
-    ; Each iteration checks one byte and either restores it immediately or leaves it as-is.
     ld a, b
     or a
-    jr z, _rchk_restore_success
+    jr z, _rchk_done
 
     ld a, e
     or a
     jr z, _rchk_fast
 
+    ; Safe mode: save original in c, write/verify, restore original either way.
     ld a, (hl)
-    push af
+    ld c, a
     ld a, d
     ld (hl), a
     ld a, (hl)
     cp d
-    jr nz, _rchk_restore_fail_safe
-    pop af
+    jr z, _rchk_safe_restore
+    call _rchk_record_fail
+_rchk_safe_restore:
+    ld a, c
     ld (hl), a
-    inc hl
-    djnz _rchk_loop
-    jr _rchk_restore_success
+    jr _rchk_next
 
 _rchk_fast:
     ; Unsafe mode: write/read verify only, no restore of original byte.
@@ -87,44 +95,29 @@ _rchk_fast:
     ld (hl), a
     ld a, (hl)
     cp d
-    jr nz, _rchk_restore_fail_unsafe
+    jr z, _rchk_next
+    call _rchk_record_fail
+
+_rchk_next:
     inc hl
     djnz _rchk_loop
-    jr _rchk_restore_success
 
-_rchk_restore_fail_safe:
-    ld d, a
-    pop af
-    ld (hl), a
-    ld a, d
-
-_rchk_restore_fail_unsafe:
-    ld d, a
-    ld e, #1
-    jr _rchk_restore
-
-_rchk_restore:
-    ; Always restore PSR + stack before publishing result and returning.
+_rchk_done:
+    ; Restore PSR (c reloaded -- it was repurposed as scratch above) + stack.
+    ld a, (_g_rchk_psr_port)
+    ld c, a
     pop af
     out (c), a
     ld sp, (_g_rchk_saved_sp)
     ei
 
-    ld a, e
+    ld a, (_g_rchk_fail_count)
     or a
     jr z, _rchk_store_success
 
     ld a, #1
     ld (_g_rchk_fail), a
-    ld a, d
-    ld (_g_rchk_read_value), a
-    ld (_g_rchk_fail_addr), hl
     jp _ram_exec_return
-
-_rchk_restore_success:
-    xor a
-    ld e, a
-    jr _rchk_restore
 
 _rchk_store_success:
     ; Success path reports the original test value as the observed byte.
@@ -133,5 +126,26 @@ _rchk_store_success:
     ld a, (_g_rchk_value)
     ld (_g_rchk_read_value), a
     jp _ram_exec_return
+
+    ; Records one mismatched byte: always increments g_rchk_fail_count;
+    ; latches g_rchk_fail_addr/g_rchk_read_value only the first time this
+    ; chunk sees a failure. In: a = readback (mismatched) value, hl =
+    ; address. Preserves hl/b/c/d/e; uses the shadow AF' (not the stack,
+    ; which stays untouched here on purpose -- no push/pop to keep balanced
+    ; across the two call sites above) to hold the readback value while
+    ; checking/updating g_rchk_fail_count.
+_rchk_record_fail:
+    ex af, af'
+    ld a, (_g_rchk_fail_count)
+    or a
+    jr nz, _rchk_record_fail_tail
+    ld (_g_rchk_fail_addr), hl
+    ex af, af'
+    ld (_g_rchk_read_value), a
+_rchk_record_fail_tail:
+    ld a, (_g_rchk_fail_count)
+    inc a
+    ld (_g_rchk_fail_count), a
+    ret
 
 _rchk_exec_stub_end:

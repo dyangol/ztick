@@ -22,6 +22,7 @@ volatile uint16_t g_rchk_saved_sp;
 volatile uint8_t g_rchk_fail;
 volatile uint16_t g_rchk_fail_addr;
 volatile uint8_t g_rchk_read_value;
+volatile uint8_t g_rchk_fail_count;
 
 void rchk_configure(uint8_t value, uint8_t safe_mode, uint16_t safe_sp, uint16_t exec_addr, uint8_t psr_port)
 {
@@ -41,4 +42,5 @@ void rchk_prepare_chunk(uint16_t base_addr, uint8_t length)
     g_rchk_fail = (uint8_t)RCHK_RESULT_OK;
     g_rchk_fail_addr = base_addr;
     g_rchk_read_value = 0u;
+    g_rchk_fail_count = 0u;
 }

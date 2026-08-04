@@ -3,6 +3,7 @@
 #include "common.h"
 #include "../bootstrap/rtos.h"
 #include "../drivers/vdp.h"
+#include "../lib/chunk_report.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
 #include "../lib/task.h"
@@ -59,20 +60,22 @@ static const vchk_region_t g_vchk_regions[] = {
 };
 #define VCHK_REGION_COUNT ((uint8_t)(sizeof(g_vchk_regions) / sizeof(g_vchk_regions[0])))
 
-static void vchk_emit_result(const uint8_t *region, uint16_t range_start, uint16_t range_end, uint8_t fail)
+static void vchk_emit_result(const uint8_t *region, uint16_t range_start, uint16_t range_end,
+                              uint16_t total_chunks, uint16_t failed_chunks)
 {
-    uint8_t line[48];
+    uint8_t line[64];
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"vchk ");
-    (void)sprint_cstr(&out, (fail == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
+    (void)sprint_cstr(&out, (failed_chunks == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
     (void)sprint_cstr(&out, (const uint8_t *)" region=");
     (void)sprint_cstr(&out, region);
     (void)sprint_cstr(&out, (const uint8_t *)" range=0x");
     (void)sprint_hex16(&out, range_start);
     (void)sprint_cstr(&out, (const uint8_t *)"-0x");
     (void)sprint_hex16(&out, range_end);
+    chunk_report_append_result(&out, total_chunks, failed_chunks);
 
     if (sprint_ok(&out) != 0u) {
         sprint_emit_line(&out);
@@ -109,24 +112,24 @@ static void vchk_emit_mismatch(const uint8_t *region, uint16_t addr, uint8_t exp
 
 /* One line per VCHK_PROGRESS_CHUNK bytes actually checked, only for regions
  * at or above VCHK_PROGRESS_MIN_LEN -- same convention as rchk's PROGRESS
- * lines (chunk address range, no percentage). */
-static void vchk_emit_progress(const uint8_t *region, uint16_t chunk_start, uint16_t chunk_end)
+ * lines (chunk address range plus the fraction of its bytes that
+ * mismatched, shared via chunk_report_append_progress()). */
+static void vchk_emit_progress(const uint8_t *region, uint16_t chunk_start, uint16_t chunk_end, uint16_t bytes_failed)
 {
     /* "vchk PROGRESS region=" (21) + longest region name ("sprattr"/
-     * "pattern", 7) + " 0x" (3) + 4 hex digits + "-0x" (3) + 4 hex digits
-     * = 42 chars -- line[40] was 2-3 bytes short (confirmed on real
-     * hardware: every PROGRESS line fell back to "vchk ERR
-     * progress-msg-overflow" instead). */
-    uint8_t line[48];
+     * "pattern", 7) + up to 24 more from chunk_report_append_progress()
+     * (" 0x"+4+"-0x"+4+" failed="+5) = 41 chars -- line[40] was 2-3 bytes
+     * short even before that suffix existed (confirmed on real hardware:
+     * every PROGRESS line fell back to "vchk ERR progress-msg-overflow"
+     * instead), so this is sized with headroom rather than to the exact
+     * worst case. */
+    uint8_t line[64];
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"vchk PROGRESS region=");
     (void)sprint_cstr(&out, region);
-    (void)sprint_cstr(&out, (const uint8_t *)" 0x");
-    (void)sprint_hex16(&out, chunk_start);
-    (void)sprint_cstr(&out, (const uint8_t *)"-0x");
-    (void)sprint_hex16(&out, chunk_end);
+    chunk_report_append_progress(&out, chunk_start, chunk_end, bytes_failed);
 
     if (sprint_ok(&out) != 0u) {
         sprint_emit_line(&out);
@@ -160,45 +163,58 @@ static uint8_t vchk_test_byte(uint16_t addr, uint8_t *out_got)
     return (got == (uint8_t)VCHK_VALUE) ? 1u : 0u;
 }
 
+/* Every byte in the region is tested regardless of earlier mismatches --
+ * VCHK_PROGRESS_CHUNK-sized groups are tallied into total_chunks/
+ * failed_chunks for the final result line, mirroring rchk's per-chunk
+ * counting (see rchk.s/main_rchk.c). Only the first mismatch found gets its
+ * own detail line (vchk_emit_mismatch); the rest just count. */
 static void vchk_run_region(const vchk_region_t *region)
 {
     uint16_t offset;
     uint16_t chunk_start = region->base;
+    uint16_t chunk_bytes_failed = 0u;
     uint8_t progress_enabled = (region->length >= (uint16_t)VCHK_PROGRESS_MIN_LEN) ? 1u : 0u;
-    uint8_t fail = 0u;
-    uint16_t fail_addr = 0u;
-    uint8_t fail_got = 0u;
+    uint16_t total_chunks = 0u;
+    uint16_t failed_chunks = 0u;
+    uint8_t mismatch_reported = 0u;
 
     for (offset = 0u; offset < region->length; ++offset) {
         uint16_t addr;
         uint8_t got;
+        uint16_t next_offset;
 
         if (rtos_task_stop_requested() != 0u) {
-            return;
+            break;
         }
 
         addr = (uint16_t)(region->base + offset);
         if (vchk_test_byte(addr, &got) == 0u) {
-            fail = 1u;
-            fail_addr = addr;
-            fail_got = got;
-            break;
-        }
-
-        if (progress_enabled != 0u) {
-            uint16_t next_offset = (uint16_t)(offset + 1u);
-            if (((next_offset % (uint16_t)VCHK_PROGRESS_CHUNK) == 0u) || (next_offset == region->length)) {
-                uint16_t chunk_end = (uint16_t)(region->base + next_offset - 1u);
-                vchk_emit_progress(region->name, chunk_start, chunk_end);
-                chunk_start = (uint16_t)(chunk_end + 1u);
+            chunk_bytes_failed++;
+            if (mismatch_reported == 0u) {
+                mismatch_reported = 1u;
+                vchk_emit_mismatch(region->name, addr, (uint8_t)VCHK_VALUE, got);
             }
         }
+
+        next_offset = (uint16_t)(offset + 1u);
+        if (((next_offset % (uint16_t)VCHK_PROGRESS_CHUNK) == 0u) || (next_offset == region->length)) {
+            uint16_t chunk_end = (uint16_t)(region->base + next_offset - 1u);
+
+            total_chunks++;
+            if (chunk_bytes_failed != 0u) {
+                failed_chunks++;
+            }
+            if (progress_enabled != 0u) {
+                vchk_emit_progress(region->name, chunk_start, chunk_end, chunk_bytes_failed);
+            }
+
+            chunk_start = (uint16_t)(chunk_end + 1u);
+            chunk_bytes_failed = 0u;
+        }
     }
 
-    if (fail != 0u) {
-        vchk_emit_mismatch(region->name, fail_addr, (uint8_t)VCHK_VALUE, fail_got);
-    }
-    vchk_emit_result(region->name, region->base, (uint16_t)(region->base + region->length - 1u), fail);
+    vchk_emit_result(region->name, region->base, (uint16_t)(region->base + region->length - 1u),
+                      total_chunks, failed_chunks);
 }
 
 void main_vchk(void)

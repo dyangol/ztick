@@ -5,6 +5,7 @@
 #include "../bootstrap/rtos.h"
 #include "../drivers/io.h"
 #include "rchk.h"
+#include "../lib/chunk_report.h"
 #include "../lib/pipe.h"
 #include "../lib/sprint.h"
 #include "../lib/task.h"
@@ -39,14 +40,15 @@ static uint16_t rchk_page_base(uint8_t page)
     return (uint16_t)((uint16_t)page << 14);
 }
 
-static void rchk_emit_result(uint8_t page, uint8_t slot, uint16_t range_start, uint16_t range_end, uint8_t safe_mode)
+static void rchk_emit_result(uint8_t page, uint8_t slot, uint16_t range_start, uint16_t range_end,
+                              uint8_t safe_mode, uint16_t total_chunks, uint16_t failed_chunks)
 {
-    uint8_t line[64];
+    uint8_t line[80];
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"rchk ");
-    (void)sprint_cstr(&out, (g_rchk_fail == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
+    (void)sprint_cstr(&out, (failed_chunks == 0u) ? (const uint8_t *)"OK" : (const uint8_t *)"Error");
     (void)sprint_cstr(&out, (const uint8_t *)" mode=");
     (void)sprint_cstr(&out, (safe_mode != 0u) ? (const uint8_t *)"safe" : (const uint8_t *)"unsafe");
     (void)sprint_cstr(&out, (const uint8_t *)" page=");
@@ -57,6 +59,34 @@ static void rchk_emit_result(uint8_t page, uint8_t slot, uint16_t range_start, u
     (void)sprint_hex16(&out, range_start);
     (void)sprint_cstr(&out, (const uint8_t *)"-0x");
     (void)sprint_hex16(&out, range_end);
+    chunk_report_append_result(&out, total_chunks, failed_chunks);
+
+    if (sprint_ok(&out) != 0u) {
+        sprint_emit_line(&out);
+    } else {
+        pipe_write_cstr((const uint8_t *)"rchk ERR msg-overflow");
+        pipe_newline();
+    }
+    pipe_flush();
+}
+
+/* One line for the first mismatch found across the whole entry (page stays
+ * fixed per entry, unlike vchk's per-region name) -- mirrors
+ * vchk_emit_mismatch()'s shape/purpose. */
+static void rchk_emit_mismatch(uint8_t page, uint16_t addr, uint8_t expected, uint8_t got)
+{
+    uint8_t line[56];
+    sprint_t out;
+
+    sprint_begin(&out, line, (uint8_t)sizeof(line));
+    (void)sprint_cstr(&out, (const uint8_t *)"rchk ERR page=");
+    (void)sprint_u8_dec(&out, page);
+    (void)sprint_cstr(&out, (const uint8_t *)" addr=0x");
+    (void)sprint_hex16(&out, addr);
+    (void)sprint_cstr(&out, (const uint8_t *)" expected=0x");
+    (void)sprint_hex8(&out, expected);
+    (void)sprint_cstr(&out, (const uint8_t *)" got=0x");
+    (void)sprint_hex8(&out, got);
 
     if (sprint_ok(&out) != 0u) {
         sprint_emit_line(&out);
@@ -87,24 +117,21 @@ static void rchk_emit_config_error(uint8_t page, const uint8_t *reason)
     pipe_flush();
 }
 
-/* One line per chunk actually processed -- just the chunk's own address
- * range, e.g. "0xC000-0xC0FE" -- so a hang or crash mid-sweep pinpoints
- * exactly which bytes were being tested, rather than only a coarse
- * percentage. The entry's total range isn't repeated here since it's
- * already in the final rchk_emit_result() line and doesn't change
- * chunk-to-chunk. */
-static void rchk_emit_progress(uint8_t page, uint16_t chunk_start, uint16_t chunk_end)
+/* One line per chunk actually processed -- the chunk's own address range
+ * plus the fraction of its bytes that mismatched, e.g. "0xC000-0xC0FE
+ * fail=0%" -- so a hang or crash mid-sweep pinpoints exactly which bytes
+ * were being tested, rather than only a coarse percentage. The entry's
+ * total range isn't repeated here since it's already in the final
+ * rchk_emit_result() line and doesn't change chunk-to-chunk. */
+static void rchk_emit_progress(uint8_t page, uint16_t chunk_start, uint16_t chunk_end, uint16_t bytes_failed)
 {
-    uint8_t line[40];
+    uint8_t line[48];
     sprint_t out;
 
     sprint_begin(&out, line, (uint8_t)sizeof(line));
     (void)sprint_cstr(&out, (const uint8_t *)"rchk PROGRESS page=");
     (void)sprint_u8_dec(&out, page);
-    (void)sprint_cstr(&out, (const uint8_t *)" 0x");
-    (void)sprint_hex16(&out, chunk_start);
-    (void)sprint_cstr(&out, (const uint8_t *)"-0x");
-    (void)sprint_hex16(&out, chunk_end);
+    chunk_report_append_progress(&out, chunk_start, chunk_end, bytes_failed);
 
     if (sprint_ok(&out) != 0u) {
         sprint_emit_line(&out);
@@ -160,6 +187,9 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
     uint16_t remaining;
     uint16_t chunk_base;
     uint8_t progress_enabled;
+    uint16_t total_chunks = 0u;
+    uint16_t failed_chunks = 0u;
+    uint8_t mismatch_reported = 0u;
 
     /* The build-time target defines the test window; reject impossible setups early. */
     if (allowed_start_off > allowed_end_off) {
@@ -205,23 +235,32 @@ static void rchk_run_one(const rchk_test_entry_t *entry, uint8_t safe_mode)
         uint8_t chunk_len = (remaining > (uint16_t)RCHK_CHUNK_MAX) ? (uint8_t)RCHK_CHUNK_MAX : (uint8_t)remaining;
         uint16_t chunk_end = (uint16_t)(chunk_base + (uint16_t)chunk_len - 1u);
 
-        rchk_prepare_chunk(chunk_base, chunk_len);
-
-        rchk_run();
-        if (g_rchk_fail != 0u) {
+        if (rtos_task_stop_requested() != 0u) {
             break;
         }
 
+        rchk_prepare_chunk(chunk_base, chunk_len);
+        rchk_run();
+        total_chunks++;
+
+        if (g_rchk_fail != 0u) {
+            failed_chunks++;
+            if (mismatch_reported == 0u) {
+                mismatch_reported = 1u;
+                rchk_emit_mismatch(page, g_rchk_fail_addr, (uint8_t)RCHK_VALUE, g_rchk_read_value);
+            }
+        }
+
         if (progress_enabled != 0u) {
-            rchk_emit_progress(page, chunk_base, chunk_end);
+            rchk_emit_progress(page, chunk_base, chunk_end, g_rchk_fail_count);
         }
 
         chunk_base = (uint16_t)(chunk_base + (uint16_t)chunk_len);
         remaining = (uint16_t)(remaining - (uint16_t)chunk_len);
     }
 
-    /* Final report reflects the exact checked range and whether any byte mismatched. */
-    rchk_emit_result(page, slot, range_start, range_end, safe_mode);
+    /* Final report reflects the exact checked range and how many chunks had at least one mismatch. */
+    rchk_emit_result(page, slot, range_start, range_end, safe_mode, total_chunks, failed_chunks);
 }
 
 void main_rchk(void)
